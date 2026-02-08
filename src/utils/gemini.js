@@ -21,6 +21,82 @@ let macMicrophoneEnabled = true;
 // Track current session mode
 let currentMode = 'interview';
 
+// Rate limit countdown (similar to groq.js)
+let rateLimitCountdownInterval = null;
+
+/**
+ * Start a live countdown in the header after a 429 rate limit error from Gemini.
+ * Updates the status every second: "Rate Limit (Gemini): 30s" → "29s" → ... → "Ready"
+ */
+function scheduleGeminiRateLimitRecovery(statusMessage, recoveryMs = 60 * 1000) {
+    if (rateLimitCountdownInterval) {
+        clearInterval(rateLimitCountdownInterval);
+        rateLimitCountdownInterval = null;
+    }
+
+    let remainingSec = Math.ceil(recoveryMs / 1000);
+    console.log(`[GEMINI] Rate limit hit - countdown ${remainingSec}s`);
+
+    sendToRenderer('update-status', `${statusMessage} (${remainingSec}s)`);
+
+    rateLimitCountdownInterval = setInterval(() => {
+        remainingSec--;
+        if (remainingSec <= 0) {
+            clearInterval(rateLimitCountdownInterval);
+            rateLimitCountdownInterval = null;
+            console.log('[GEMINI] Rate limit countdown done');
+            sendToRenderer('update-status', 'Ready');
+        } else {
+            sendToRenderer('update-status', `${statusMessage} (${remainingSec}s)`);
+        }
+    }, 1000);
+}
+
+/**
+ * Parse the Gemini 429 error to determine rate limit type and extract retry wait time.
+ * Gemini errors include retryDelay in details: {"retryDelay":"30s"}
+ * or "try again in XX.XXs" in the message text.
+ */
+function parseGeminiRateLimitError(errorMessage) {
+    let statusMessage = 'Rate Limit (Gemini)';
+    let recoveryMs = 60 * 1000; // Fallback 60s for Gemini
+
+    try {
+        // Try to extract retryDelay from the JSON in the error message
+        // SDK wraps the error with escaped quotes: \"retryDelay\": \"26s\"
+        const retryDelayMatch = errorMessage.match(/retryDelay[\\"\s:]+(\d+\.?\d*)s/i);
+        if (retryDelayMatch) {
+            const retrySec = parseFloat(retryDelayMatch[1]);
+            recoveryMs = Math.ceil((retrySec + 2) * 1000);
+        }
+
+        // Also try "Please retry in 26.326453387s." pattern (Gemini's wording)
+        if (!retryDelayMatch) {
+            const retryInMatch = errorMessage.match(/retry in (\d+\.?\d*)s/i);
+            if (retryInMatch) {
+                const retrySec = parseFloat(retryInMatch[1]);
+                recoveryMs = Math.ceil((retrySec + 2) * 1000);
+            }
+        }
+
+        // Determine the rate limit type
+        const msgLower = errorMessage.toLowerCase();
+        if (msgLower.includes('resource_exhausted') || msgLower.includes('resource has been exhausted')) {
+            statusMessage = 'Rate Limit (Gemini): Quota exhausted';
+        } else if (msgLower.includes('tokens') || msgLower.includes('tpm')) {
+            statusMessage = 'Rate Limit (Gemini): Tokens exceeded';
+        } else if (msgLower.includes('requests') || msgLower.includes('rpm')) {
+            statusMessage = 'Rate Limit (Gemini): Requests exceeded';
+        }
+
+        console.log(`[GEMINI] Rate limit details: ${errorMessage.substring(0, 200)}`);
+    } catch (e) {
+        console.warn('[GEMINI] Could not parse 429 error:', e.message);
+    }
+
+    return { statusMessage, recoveryMs };
+}
+
 // Model generation settings (can be updated via IPC from renderer)
 let generationSettings = {
     temperature: 0.7,
@@ -109,6 +185,12 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
 
     isInitializingSession = true;
     sendToRenderer('session-initializing', true);
+
+    // Clear any active rate limit countdown from previous session
+    if (rateLimitCountdownInterval) {
+        clearInterval(rateLimitCountdownInterval);
+        rateLimitCountdownInterval = null;
+    }
 
     const client = new GoogleGenAI({
         vertexai: false,
@@ -449,11 +531,22 @@ RESPONSE FORMAT: [approach sentence] + [code] + [complexity]`;
 
                         const errMsg = (error.message || '').toLowerCase();
                         if (errMsg.includes('429')) {
-                            shortMsg = 'Rate limit exceeded';
-                        } else if (errMsg.includes('503')) {
-                            shortMsg = 'Server overloaded';
+                            const rateLimit = parseGeminiRateLimitError(error.message || '');
+                            scheduleGeminiRateLimitRecovery(rateLimit.statusMessage, rateLimit.recoveryMs);
+                            return null;
+                        } else if (errMsg.includes('503') || errMsg.includes('overloaded') || errMsg.includes('unavailable')) {
+                            // Server overloaded — common on free tier, retry after 15s
+                            scheduleGeminiRateLimitRecovery('Server Overloaded (Gemini)', 15 * 1000);
+                            return null;
                         } else if (errMsg.includes('401') || errMsg.includes('api_key_invalid') || errMsg.includes('api key not valid')) {
                             shortMsg = 'Invalid API Key (Gemini)';
+                        } else if (errMsg.includes('404') || errMsg.includes('not found') || errMsg.includes('not_found')) {
+                            // Model removed or deprecated by Google
+                            shortMsg = 'Model Unavailable (Gemini)';
+                            console.error('[GEMINI] Model not found — it may have been removed or deprecated by Google.');
+                        } else if (errMsg.includes('deprecated') || errMsg.includes('decommission')) {
+                            shortMsg = 'Model Deprecated (Gemini)';
+                            console.error('[GEMINI] Model deprecated by Google.');
                         }
 
                         sendToRenderer('update-status', shortMsg);
