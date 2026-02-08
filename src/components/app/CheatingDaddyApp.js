@@ -292,15 +292,37 @@ export class CheatingDaddyApp extends LitElement {
 
     // Main view event handlers
     async handleStart() {
-        // check if api key is empty do nothing
-        const apiKey = localStorage.getItem('apiKey')?.trim();
-        if (!apiKey || apiKey === '') {
-            // Trigger the red blink animation on the API key input
-            const mainView = this.shadowRoot.querySelector('main-view');
-            if (mainView && mainView.triggerApiKeyError) {
-                mainView.triggerApiKeyError();
+        const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
+        const isGroqModel = selectedModel && (selectedModel.includes('llama') || selectedModel.includes('groq'));
+        const needsBothKeys = selectedModel === 'gemini-3-flash-preview' && this.selectedProfile !== 'exam';
+        const mainView = this.shadowRoot.querySelector('main-view');
+
+        // Validate the right API key(s) based on model
+        if (needsBothKeys) {
+            const geminiKey = localStorage.getItem('apiKey')?.trim();
+            const groqKey = localStorage.getItem('groqApiKey')?.trim();
+            let hasError = false;
+            if (!geminiKey) {
+                if (mainView?.triggerApiKeyError) mainView.triggerApiKeyError();
+                hasError = true;
             }
-            return;
+            if (!groqKey) {
+                if (mainView?.triggerGroqApiKeyError) mainView.triggerGroqApiKeyError();
+                hasError = true;
+            }
+            if (hasError) return;
+        } else if (isGroqModel) {
+            const groqKey = localStorage.getItem('groqApiKey')?.trim();
+            if (!groqKey) {
+                if (mainView?.triggerApiKeyError) mainView.triggerApiKeyError();
+                return;
+            }
+        } else {
+            const apiKey = localStorage.getItem('apiKey')?.trim();
+            if (!apiKey) {
+                if (mainView?.triggerApiKeyError) mainView.triggerApiKeyError();
+                return;
+            }
         }
 
         // Auto-set mode based on profile
@@ -315,8 +337,7 @@ export class CheatingDaddyApp extends LitElement {
             localStorage.setItem('selectedMode', 'interview');
         }
 
-        // Get model from localStorage (only matters for coding mode)
-        const selectedModel = localStorage.getItem('selectedModel') || 'gemini-3-pro-preview';
+        // selectedModel already retrieved above for key validation
 
         await cheddar.initializeGemini(this.selectedProfile, this.selectedLanguage, selectedMode, selectedModel);
 
@@ -340,13 +361,17 @@ export class CheatingDaddyApp extends LitElement {
     async handleAPIKeyHelp() {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            // Open different URLs based on selected model
-            const selectedModel = localStorage.getItem('selectedModel') || 'gemini-2.0-flash-exp';
+            const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
             const isGroqModel = selectedModel && (selectedModel.includes('llama') || selectedModel.includes('groq'));
-            const url = isGroqModel
-                ? 'https://groq.com/'
-                : 'https://aistudio.google.com/';
-            await ipcRenderer.invoke('open-external', url);
+
+            if (selectedModel === 'gemini-3-flash-preview' && this.selectedProfile !== 'exam') {
+                // Dual key mode (interview): open both API key pages
+                await ipcRenderer.invoke('open-external', 'https://aistudio.google.com/');
+                await ipcRenderer.invoke('open-external', 'https://groq.com/');
+            } else {
+                const url = isGroqModel ? 'https://groq.com/' : 'https://aistudio.google.com/';
+                await ipcRenderer.invoke('open-external', url);
+            }
         }
     }
 

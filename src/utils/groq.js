@@ -3,6 +3,7 @@ const { BrowserWindow, ipcMain } = require('electron');
 const https = require('https');
 const { URL } = require('url');
 const { getCondensedSystemPrompt } = require('./prompts');
+const { chatWithGeminiText } = require('./gemini');
 
 // Groq API configuration
 const GROQ_API_BASE = 'https://api.groq.com/openai/v1';
@@ -695,8 +696,13 @@ async function processAudioBuffer(model = null) {
         sendToRenderer('groq-transcription', transcription);
         sendToRenderer('update-status', 'Generating...');
 
-        // Step 2: Send transcription to Llama for response
-        const response = await chatWithLlama(transcription, chatModel);
+        // Step 2: Send transcription to chat model for response
+        let response;
+        if (chatModel === 'gemini-3-flash-preview') {
+            response = await chatWithGeminiText(transcription);
+        } else {
+            response = await chatWithLlama(transcription, chatModel);
+        }
 
         // Reset speech tracking state
         isSpeaking = false;
@@ -768,8 +774,13 @@ async function flushAudioBuffer(model = null) {
         sendToRenderer('groq-transcription', transcription);
         sendToRenderer('update-status', 'Generating...');
 
-        // Send to Llama for response
-        const response = await chatWithLlama(transcription, chatModel);
+        // Send transcription to chat model for response
+        let response;
+        if (chatModel === 'gemini-3-flash-preview') {
+            response = await chatWithGeminiText(transcription);
+        } else {
+            response = await chatWithLlama(transcription, chatModel);
+        }
 
         // Reset state
         isSpeaking = false;
@@ -807,8 +818,15 @@ async function analyzeWithLlama(text, imageData, model = 'llama-4-maverick') {
         if (storedLanguageName !== 'English') {
             finalText = `${text} (Remember: Respond in ${storedLanguageName})`;
         }
-        const response = await chatWithLlama(finalText, model, imageData);
-        // Status will be set to 'Listening...' by chatWithLlama on success
+
+        let response;
+        if (model === 'gemini-3-flash-preview') {
+            // Route to Gemini for screenshot analysis
+            response = await chatWithGeminiText(finalText, imageData);
+        } else {
+            response = await chatWithLlama(finalText, model, imageData);
+        }
+        // Status will be set to 'Listening...' / 'Ready' by the respective handler
         return response;
     } catch (error) {
         console.error('[GROQ] Error analyzing:', error);

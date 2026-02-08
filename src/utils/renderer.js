@@ -166,38 +166,52 @@ function arrayBufferToBase64(buffer) {
     return btoa(binary);
 }
 
-// Helper to check if model is a Groq/Llama model
-function isGroqModel(model) {
-    return model && (model.includes('llama') || model.includes('groq'));
-}
-
-async function initializeGemini(profile = 'interview', language = 'en-US', mode = 'interview', model = 'gemini-2.0-flash-exp') {
+async function initializeGemini(profile = 'interview', language = 'en-US', mode = 'interview', model = 'llama-4-maverick') {
     // Get mode and model from localStorage if not provided
     const selectedMode = mode || localStorage.getItem('selectedMode') || 'interview';
-    const selectedModel = model || localStorage.getItem('selectedModel') || 'gemini-2.0-flash-exp';
+    const selectedModel = model || localStorage.getItem('selectedModel') || 'llama-4-maverick';
 
-    // Check if using Groq/Llama model for interview mode
-    if (selectedMode === 'interview' && isGroqModel(selectedModel)) {
-        // Initialize Groq for Llama models
+    if (selectedMode === 'interview') {
+        // ALL interview models use Groq Whisper for STT
         const groqApiKey = localStorage.getItem('groqApiKey')?.trim();
         if (groqApiKey) {
             const result = await ipcRenderer.invoke('initialize-groq', groqApiKey, localStorage.getItem('customPrompt') || '', profile, language);
             if (result.success) {
-                cheddar.setStatus('Listening...');
-                console.log('[RENDERER] Groq initialized for Llama model:', selectedModel);
+                console.log('[RENDERER] Groq initialized for interview model:', selectedModel);
             } else {
                 cheddar.setStatus('Error: ' + result.error);
+                return;
             }
         } else {
-            cheddar.setStatus('Error: No API key');
+            cheddar.setStatus('Error: No Groq API key');
+            return;
         }
+
+        // If Gemini model, also initialize Gemini for text generation + screenshots
+        if (selectedModel === 'gemini-3-flash-preview') {
+            const apiKey = localStorage.getItem('apiKey')?.trim();
+            if (apiKey) {
+                const success = await ipcRenderer.invoke('initialize-gemini', apiKey, localStorage.getItem('customPrompt') || '', profile, language, selectedMode, selectedModel);
+                if (success) {
+                    console.log('[RENDERER] Gemini also initialized for hybrid mode');
+                } else {
+                    cheddar.setStatus('Error: Gemini init failed');
+                    return;
+                }
+            } else {
+                cheddar.setStatus('Error: No Gemini API key');
+                return;
+            }
+        }
+
+        cheddar.setStatus('Listening...');
     } else {
-        // Initialize Gemini for Gemini models
+        // Coding/Exam mode — Gemini only
         const apiKey = localStorage.getItem('apiKey')?.trim();
         if (apiKey) {
             const success = await ipcRenderer.invoke('initialize-gemini', apiKey, localStorage.getItem('customPrompt') || '', profile, language, selectedMode, selectedModel);
             if (success) {
-                cheddar.setStatus(selectedMode === 'interview' ? 'Live' : 'Ready');
+                cheddar.setStatus('Ready');
             } else {
                 cheddar.setStatus('error');
             }
@@ -373,10 +387,10 @@ function setupLinuxSystemAudioProcessing() {
     const source = audioContext.createMediaStreamSource(mediaStream);
     audioProcessor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
 
-    // Check if using Groq/Llama model
+    // All interview mode audio goes to Groq Whisper for STT
     const selectedMode = localStorage.getItem('selectedMode') || 'interview';
-    const selectedModel = localStorage.getItem('selectedModel') || 'gemini-2.0-flash-exp';
-    const useGroqForSTT = selectedMode === 'interview' && isGroqModel(selectedModel);
+    const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
+    const useGroqForSTT = selectedMode === 'interview';
 
     console.log(`[AUDIO] Mode: ${selectedMode}, Model: ${selectedModel}, Using Groq: ${useGroqForSTT}`);
 
@@ -399,12 +413,11 @@ function setupLinuxSystemAudioProcessing() {
                             const base64Data = arrayBufferToBase64(pcmData16.buffer);
 
                             if (useGroqForSTT) {
-                                // Send to Groq for Whisper transcription + Llama response
-                                // Just add audio - let checkAndFlush() timer handle processing
+                                // Send to Groq for Whisper transcription
                                 await ipcRenderer.invoke('groq-add-audio', { data: base64Data });
                                 console.log('[GROQ] VAD segment added, duration:', metadata?.duration || 'unknown');
                             } else {
-                                // Send to Gemini Live API
+                                // Coding/exam mode: send audio to Gemini
                                 await ipcRenderer.invoke('send-audio-content', {
                                     data: base64Data,
                                     mimeType: 'audio/pcm;rate=24000',
@@ -471,7 +484,7 @@ function setupLinuxSystemAudioProcessing() {
                     // Send to Groq for Whisper transcription
                     await ipcRenderer.invoke('groq-add-audio', { data: base64Data });
                 } else {
-                    // Send to Gemini Live API
+                    // Coding/exam mode: send audio to Gemini
                     await ipcRenderer.invoke('send-audio-content', {
                         data: base64Data,
                         mimeType: 'audio/pcm;rate=24000',
@@ -491,10 +504,10 @@ function setupWindowsLoopbackProcessing() {
     const source = audioContext.createMediaStreamSource(mediaStream);
     audioProcessor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
 
-    // Check if using Groq/Llama model
+    // All interview mode audio goes to Groq Whisper for STT
     const selectedMode = localStorage.getItem('selectedMode') || 'interview';
-    const selectedModel = localStorage.getItem('selectedModel') || 'gemini-2.0-flash-exp';
-    const useGroqForSTT = selectedMode === 'interview' && isGroqModel(selectedModel);
+    const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
+    const useGroqForSTT = selectedMode === 'interview';
 
     console.log(`[AUDIO] Mode: ${selectedMode}, Model: ${selectedModel}, Using Groq: ${useGroqForSTT}`);
 
@@ -517,12 +530,11 @@ function setupWindowsLoopbackProcessing() {
                             const base64Data = arrayBufferToBase64(pcmData16.buffer);
 
                             if (useGroqForSTT) {
-                                // Send to Groq for Whisper transcription + Llama response
-                                // Just add audio - let checkAndFlush() timer handle processing
+                                // Send to Groq for Whisper transcription
                                 await ipcRenderer.invoke('groq-add-audio', { data: base64Data });
                                 console.log('[GROQ] VAD segment added, duration:', metadata?.duration || 'unknown');
                             } else {
-                                // Send to Gemini Live API
+                                // Coding/exam mode: send audio to Gemini
                                 await ipcRenderer.invoke('send-audio-content', {
                                     data: base64Data,
                                     mimeType: 'audio/pcm;rate=24000',
@@ -589,7 +601,7 @@ function setupWindowsLoopbackProcessing() {
                     // Send to Groq for Whisper transcription
                     await ipcRenderer.invoke('groq-add-audio', { data: base64Data });
                 } else {
-                    // Send to Gemini Live API
+                    // Coding/exam mode: send audio to Gemini
                     await ipcRenderer.invoke('send-audio-content', {
                         data: base64Data,
                         mimeType: 'audio/pcm;rate=24000',
@@ -687,10 +699,11 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
                     return;
                 }
 
-                // Check if using Groq/Llama model for manual screenshots
+                // All interview mode manual screenshots go through Groq handler
+                // (groq.js internally routes to Gemini for gemini-3-flash-preview)
                 const selectedMode = localStorage.getItem('selectedMode') || 'interview';
-                const selectedModel = localStorage.getItem('selectedModel') || 'gemini-2.0-flash-exp';
-                const useGroq = selectedMode === 'interview' && isGroqModel(selectedModel) && captureIsManual;
+                const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
+                const useGroq = selectedMode === 'interview' && captureIsManual;
 
                 let result;
                 if (useGroq) {
@@ -705,7 +718,6 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
                     // Send to Gemini
                     result = await ipcRenderer.invoke('send-image-content', {
                         data: base64data,
-                        isManual: captureIsManual,
                     });
                 }
 
@@ -868,10 +880,11 @@ async function sendTextMessage(text) {
             reader.readAsDataURL(blob);
         });
 
-        // Check if using Groq/Llama model
+        // All interview mode screenshots go through Groq handler
+        // (groq.js internally routes to Gemini for gemini-3-flash-preview)
         const selectedMode = localStorage.getItem('selectedMode') || 'interview';
-        const selectedModel = localStorage.getItem('selectedModel') || 'gemini-2.0-flash-exp';
-        const useGroq = selectedMode === 'interview' && isGroqModel(selectedModel);
+        const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
+        const useGroq = selectedMode === 'interview';
 
         let result;
         if (useGroq) {

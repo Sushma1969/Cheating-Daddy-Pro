@@ -486,7 +486,6 @@ export class AdvancedView extends LitElement {
     // Model-specific max output token limits (maximum allowed)
     static MODEL_MAX_TOKENS = {
         // Gemini models
-        'gemini-2.0-flash-exp': 8192,
         'gemini-2.5-flash': 65536,
         'gemini-3-flash-preview': 65536,
         'gemini-3-pro-preview': 65536,
@@ -499,12 +498,6 @@ export class AdvancedView extends LitElement {
     // Interview models: balanced responses (enough tokens for technical explanations + code)
     // Coding models: detailed responses (higher tokens, lower temp for accuracy)
     static MODEL_DEFAULTS = {
-        // Gemini 2.0 Flash Exp - Interview mode (balanced, enough for code + explanation)
-        'gemini-2.0-flash-exp': {
-            temperature: 0.7,
-            topP: 0.95,
-            maxOutputTokens: 4096,
-        },
         // Gemini 2.5 Flash - Coding mode (detailed code, more deterministic)
         'gemini-2.5-flash': {
             temperature: 0.5,
@@ -552,7 +545,7 @@ export class AdvancedView extends LitElement {
         this.contentProtection = true;
 
         // Model generation defaults (model-specific values)
-        this.selectedModel = localStorage.getItem('selectedModel') || 'gemini-2.0-flash-exp';
+        this.selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
         this.temperature = this.getDefaultTemperature();
         this.topP = this.getDefaultTopP();
         this.maxOutputTokens = this.getDefaultMaxTokens();
@@ -597,7 +590,6 @@ export class AdvancedView extends LitElement {
     // Get display name for the current model
     getModelDisplayName() {
         const modelNames = {
-            'gemini-2.0-flash-exp': 'Gemini 2.0 Flash',
             'gemini-2.5-flash': 'Gemini 2.5 Flash',
             'gemini-3-flash-preview': 'Gemini 3.0 Flash',
             'gemini-3-pro-preview': 'Gemini 3.0 Pro',
@@ -629,7 +621,7 @@ export class AdvancedView extends LitElement {
 
         // Always re-read selected model from localStorage when component connects
         // This ensures we have the latest model after navigating from CustomizeView
-        const currentModel = localStorage.getItem('selectedModel') || 'gemini-2.0-flash-exp';
+        const currentModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
         if (currentModel !== this.selectedModel) {
             this.selectedModel = currentModel;
             // Load this model's saved settings (or defaults if none saved)
@@ -641,7 +633,7 @@ export class AdvancedView extends LitElement {
 
         // Listen for model changes from CustomizeView (same window)
         this.modelChangeHandler = (e) => {
-            const newModel = e.detail?.model || 'gemini-2.0-flash-exp';
+            const newModel = e.detail?.model || 'llama-4-maverick';
             if (newModel !== this.selectedModel) {
                 this.selectedModel = newModel;
                 // Load this model's saved settings (preserves custom values per model)
@@ -655,7 +647,7 @@ export class AdvancedView extends LitElement {
         // Listen for model changes from other windows/tabs
         this.storageHandler = (e) => {
             if (e.key === 'selectedModel') {
-                const newModel = e.newValue || 'gemini-2.0-flash-exp';
+                const newModel = e.newValue || 'llama-4-maverick';
                 if (newModel !== this.selectedModel) {
                     this.selectedModel = newModel;
                     // Load this model's saved settings (preserves custom values per model)

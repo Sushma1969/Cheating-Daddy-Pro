@@ -502,7 +502,7 @@ export class CustomizeView extends LitElement {
 
         // Mode and model selection defaults
         this.selectedMode = 'interview';
-        this.selectedModel = 'gemini-2.0-flash-exp';
+        this.selectedModel = 'llama-4-maverick';
 
         this.loadKeybinds();
         this.loadGoogleSearchSettings();
@@ -635,9 +635,9 @@ export class CustomizeView extends LitElement {
             localStorage.setItem('selectedMode', 'interview');
 
             // Validate model for interview mode
-            const validInterviewModels = ['gemini-2.0-flash-exp', 'llama-4-maverick', 'llama-4-scout'];
+            const validInterviewModels = ['gemini-3-flash-preview', 'llama-4-maverick', 'llama-4-scout'];
             if (!validInterviewModels.includes(this.selectedModel)) {
-                this.selectedModel = 'gemini-2.0-flash-exp';
+                this.selectedModel = 'llama-4-maverick';
             }
         }
 
@@ -1078,7 +1078,7 @@ export class CustomizeView extends LitElement {
         const selectedModel = localStorage.getItem('selectedModel');
 
         this.selectedMode = selectedMode || 'interview';
-        this.selectedModel = selectedModel || 'gemini-2.0-flash-exp';
+        this.selectedModel = selectedModel || 'llama-4-maverick';
     }
 
     // Helper to check if selected model is a Groq/Llama model
@@ -1094,9 +1094,9 @@ export class CustomizeView extends LitElement {
         // In coding mode, user can choose between flash and pro
         if (this.selectedMode === 'interview') {
             // Keep current model if it's valid for interview mode, otherwise default
-            const validInterviewModels = ['gemini-2.0-flash-exp', 'llama-4-maverick', 'llama-4-scout'];
+            const validInterviewModels = ['gemini-3-flash-preview', 'llama-4-maverick', 'llama-4-scout'];
             if (!validInterviewModels.includes(this.selectedModel)) {
-                this.selectedModel = 'gemini-2.0-flash-exp';
+                this.selectedModel = 'llama-4-maverick';
             }
         } else {
             // Keep current model selection for coding mode
@@ -1228,13 +1228,13 @@ export class CustomizeView extends LitElement {
                                     <custom-dropdown
                                         .value=${this.selectedModel}
                                         .options=${[
-                                            { value: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash Exp', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
+                                            { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
                                             { value: 'llama-4-maverick', label: 'Llama 4 Maverick 17B', icon: './assets/models/metalogo.dcf881ba.svg' },
                                             { value: 'llama-4-scout', label: 'Llama 4 Scout 17B', icon: './assets/models/metalogo.dcf881ba.svg' }
                                         ]}
                                         @change=${e => this.handleModelChange({ target: { value: e.detail.value } })}
                                     ></custom-dropdown>
-                                    <div class="form-description">${this.selectedModel === 'gemini-2.0-flash-exp' ? 'Gemini Live API: Real-time audio streaming with speaker diarization. Requires Gemini API key.' : this.selectedModel === 'llama-4-maverick' ? 'Groq Whisper STT + Llama 4 Maverick for fast interview responses. Requires Groq API key.' : 'Groq Whisper STT + Llama 4 Scout for efficient interview responses. Requires Groq API key.'}</div>
+                                    <div class="form-description">${this.selectedModel === 'gemini-3-flash-preview' ? 'Groq Whisper STT + Gemini 3 Flash for accurate interview responses. Requires both Groq and Gemini API keys.' : this.selectedModel === 'llama-4-maverick' ? 'Groq Whisper STT + Llama 4 Maverick for fast interview responses. Requires Groq API key.' : 'Groq Whisper STT + Llama 4 Scout for efficient interview responses. Requires Groq API key.'}</div>
                                 </div>
                             </div>
                         `}

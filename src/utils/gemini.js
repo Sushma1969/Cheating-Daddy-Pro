@@ -5,49 +5,21 @@ const { saveDebugAudio } = require('../audioUtils');
 const { getSystemPrompt } = require('./prompts');
 const { VADProcessor } = require('./vad');
 
-// Conversation tracking variables
-let currentSessionId = null;
-let currentTranscription = '';
-let conversationHistory = [];
+// Session tracking
 let isInitializingSession = false;
-let isSessionReady = false; // Track if Live API setup is complete
-
-// Auto-reset tracking to prevent context buildup
-let responseCount = 0;
-const MAX_RESPONSES_BEFORE_RESET = 3; // Reset session every 3 responses for optimal performance
-let isAutoResetting = false;
-let pendingReset = false; // Flag to indicate reset is needed but waiting for turn to complete
-let didGenerateResponse = false; // Track if AI actually generated a response in current turn
-
-function formatSpeakerResults(results) {
-    let text = '';
-    for (const result of results) {
-        if (result.transcript && result.speakerId) {
-            const speakerLabel = result.speakerId === 1 ? 'Interviewer' : 'Candidate';
-            text += `[${speakerLabel}]: ${result.transcript}\n`;
-        }
-    }
-    return text;
-}
-
-module.exports.formatSpeakerResults = formatSpeakerResults;
+let storedLanguageName = 'English';
 
 // Audio capture variables
 let systemAudioProc = null;
-let messageBuffer = '';
 
-// Reconnection tracking variables
-let reconnectionAttempts = 0;
-let maxReconnectionAttempts = 3;
-let reconnectionDelay = 2000; // 2 seconds between attempts
-let lastSessionParams = null;
-let storedLanguageName = 'English'; // Store the selected language name for use in prompts
-
-// macOS VAD tracking variables
+// macOS audio VAD variables (used by macOS audio capture)
 let macVADProcessor = null;
 let macVADEnabled = false;
 let macVADMode = 'automatic';
-let macMicrophoneEnabled = false;
+let macMicrophoneEnabled = true;
+
+// Track current session mode
+let currentMode = 'interview';
 
 // Model generation settings (can be updated via IPC from renderer)
 let generationSettings = {
@@ -59,7 +31,6 @@ let generationSettings = {
 // Model-specific max output token limits
 const MODEL_MAX_OUTPUT_TOKENS = {
     // Gemini models
-    'gemini-2.0-flash-exp': 8192,
     'gemini-2.5-flash': 65536,
     'gemini-3-flash-preview': 65536,
     'gemini-3-pro-preview': 65536,
@@ -77,69 +48,6 @@ function sendToRenderer(channel, data) {
     const windows = BrowserWindow.getAllWindows();
     if (windows.length > 0) {
         windows[0].webContents.send(channel, data);
-    }
-}
-
-// Conversation management functions
-function initializeNewSession() {
-    currentSessionId = Date.now().toString();
-    currentTranscription = '';
-    conversationHistory = [];
-    console.log('New conversation session started:', currentSessionId);
-}
-
-function saveConversationTurn(transcription, aiResponse) {
-    if (!currentSessionId) {
-        initializeNewSession();
-    }
-
-    const conversationTurn = {
-        timestamp: Date.now(),
-        transcription: transcription.trim(),
-        ai_response: aiResponse.trim(),
-    };
-
-    conversationHistory.push(conversationTurn);
-    console.log('Saved conversation turn:', conversationTurn);
-
-    // Note: Conversation history storage has been removed
-}
-
-function getCurrentSessionData() {
-    return {
-        sessionId: currentSessionId,
-        history: conversationHistory,
-    };
-}
-
-async function sendReconnectionContext() {
-    if (!global.geminiSessionRef?.current || conversationHistory.length === 0) {
-        return;
-    }
-
-    try {
-        // Gather all transcriptions from the conversation history
-        const transcriptions = conversationHistory
-            .map(turn => turn.transcription)
-            .filter(transcription => transcription && transcription.trim().length > 0);
-
-        if (transcriptions.length === 0) {
-            return;
-        }
-
-        // Create the context message
-        const contextMessage = `Till now all these questions were asked in the interview, answer the last one please:\n\n${transcriptions.join(
-            '\n'
-        )}`;
-
-        console.log('Sending reconnection context with', transcriptions.length, 'previous questions');
-
-        // Send the context message to the new session
-        await global.geminiSessionRef.current.sendRealtimeInput({
-            text: contextMessage,
-        });
-    } catch (error) {
-        console.error('Error sending reconnection context:', error);
     }
 }
 
@@ -193,127 +101,14 @@ async function getStoredSetting(key, defaultValue) {
     return defaultValue;
 }
 
-async function attemptReconnection() {
-    if (!lastSessionParams || reconnectionAttempts >= maxReconnectionAttempts) {
-        console.log('Max reconnection attempts reached or no session params stored');
-        sendToRenderer('update-status', 'Session closed');
-        return false;
-    }
-
-    reconnectionAttempts++;
-    console.log(`Attempting reconnection ${reconnectionAttempts}/${maxReconnectionAttempts}...`);
-
-    // Wait before attempting reconnection
-    await new Promise(resolve => setTimeout(resolve, reconnectionDelay));
-
-    try {
-        const session = await initializeGeminiSession(
-            lastSessionParams.apiKey,
-            lastSessionParams.customPrompt,
-            lastSessionParams.profile,
-            lastSessionParams.language,
-            true // isReconnection flag
-        );
-
-        if (session && global.geminiSessionRef) {
-            global.geminiSessionRef.current = session;
-            reconnectionAttempts = 0; // Reset counter on successful reconnection
-            console.log('Live session reconnected');
-
-            // Send context message with previous transcriptions
-            await sendReconnectionContext();
-
-            return true;
-        }
-    } catch (error) {
-        console.error(`Reconnection attempt ${reconnectionAttempts} failed:`, error);
-    }
-
-    // If this attempt failed, try again
-    if (reconnectionAttempts < maxReconnectionAttempts) {
-        return attemptReconnection();
-    } else {
-        console.log('All reconnection attempts failed');
-        sendToRenderer('update-status', 'Session closed');
-        return false;
-    }
-}
-
-// Auto-reset session to prevent context buildup and maintain fast response times
-async function autoResetSessionInBackground() {
-    if (!lastSessionParams || isAutoResetting || isInitializingSession) {
-        console.log('Cannot auto-reset: session params missing or already resetting');
-        return;
-    }
-
-    isAutoResetting = true;
-    console.log('Auto-resetting session after 3 responses to maintain optimal performance...');
-
-    try {
-        // Close current session
-        if (global.geminiSessionRef?.current) {
-            await global.geminiSessionRef.current.close();
-        }
-
-        // Small delay to ensure clean closure
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        // Create fresh session with same parameters
-        const newSession = await initializeGeminiSession(
-            lastSessionParams.apiKey,
-            lastSessionParams.customPrompt,
-            lastSessionParams.profile,
-            lastSessionParams.language,
-            false, // Not a reconnection, fresh start
-            lastSessionParams.mode,
-            lastSessionParams.model
-        );
-
-        if (newSession && global.geminiSessionRef) {
-            global.geminiSessionRef.current = newSession;
-            responseCount = 0; // Reset counter
-            pendingReset = false; // Clear pending reset flag
-            didGenerateResponse = false; // Reset response generation flag
-            console.log('Session auto-reset completed - ready for fast responses');
-
-            // IMPORTANT: Send conversation history to new session so it remembers previous Q&A
-            await sendReconnectionContext();
-            console.log('Conversation context sent to new session - AI remembers previous answers');
-        } else {
-            console.error('Failed to create new session during auto-reset');
-        }
-    } catch (error) {
-        console.error('Error during auto-reset:', error);
-    } finally {
-        isAutoResetting = false;
-    }
-}
-
-async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'interview', language = 'en-US', isReconnection = false, mode = 'interview', model = 'gemini-2.5-flash') {
+async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'interview', language = 'en-US', _isReconnection = false, mode = 'interview', model = 'gemini-2.5-flash') {
     if (isInitializingSession) {
         console.log('Session initialization already in progress');
         return false;
     }
 
     isInitializingSession = true;
-    isSessionReady = false; // Reset ready state for new session
     sendToRenderer('session-initializing', true);
-
-    // Store session parameters for reconnection (only if not already reconnecting)
-    if (!isReconnection) {
-        lastSessionParams = {
-            apiKey,
-            customPrompt,
-            profile,
-            language,
-            mode,
-            model,
-        };
-        reconnectionAttempts = 0; // Reset counter for new session
-        responseCount = 0; // Reset response counter for fresh session
-        didGenerateResponse = false; // Reset response generation flag
-        console.log('Response counter reset for new session');
-    }
 
     const client = new GoogleGenAI({
         vertexai: false,
@@ -378,234 +173,13 @@ YOU MUST respond ONLY in ${selectedLanguageName}, regardless of what language th
 Even if they speak in mixed languages (e.g., English + Hindi, Russian + English, etc.), you MUST respond entirely in ${selectedLanguageName}.
 This is mandatory and cannot be overridden by any other instruction.`;
 
-    // Initialize new conversation session (only if not reconnecting)
-    if (!isReconnection) {
-        initializeNewSession();
-    }
-
     try {
-        // Determine which model to use based on mode
         let session;
+        const regularModel = model || 'gemini-2.5-flash';
+        currentMode = mode;
+        console.log(`Initializing Gemini session: ${regularModel} (mode: ${mode})`);
 
-        if (mode === 'interview') {
-            // Interview mode: Use Gemini 2.0 Flash Exp Live API for real-time audio/video
-            const liveModel = 'gemini-2.0-flash-exp';
-            console.log(` Interview mode: Using ${liveModel}`);
-
-            session = await client.live.connect({
-                model: liveModel,
-            callbacks: {
-                onopen: function () {
-                    sendToRenderer('update-status', 'Live session connected');
-                },
-                onmessage: function (message) {
-                    console.log('----------------', message);
-
-                    // Handle setup complete - session is now ready
-                    if (message.setupComplete) {
-                        isSessionReady = true;
-                        isInitializingSession = false;
-                        sendToRenderer('session-initializing', false);
-                        sendToRenderer('update-status', 'Listening...');
-                        console.log('✅ Live API setup complete - session ready');
-                    }
-
-                    if (message.serverContent?.inputTranscription?.results) {
-                        currentTranscription += formatSpeakerResults(message.serverContent.inputTranscription.results);
-                    }
-
-                    // Handle AI model response
-                    if (message.serverContent?.modelTurn?.parts) {
-                        for (const part of message.serverContent.modelTurn.parts) {
-                            console.log(part);
-                            if (part.text) {
-                                messageBuffer += part.text;
-                                sendToRenderer('update-response', messageBuffer);
-                                didGenerateResponse = true; // Mark that AI generated a response
-                            }
-                        }
-                    }
-
-                    if (message.serverContent?.generationComplete) {
-                        sendToRenderer('update-response', messageBuffer);
-
-                        // Save conversation turn when we have both transcription and AI response
-                        if (currentTranscription && messageBuffer) {
-                            saveConversationTurn(currentTranscription, messageBuffer);
-                            currentTranscription = ''; // Reset for next turn
-                        }
-
-                        messageBuffer = '';
-                        // Note: Auto-reset logic moved to turnComplete handler (Live API uses turnComplete, not generationComplete)
-                    }
-
-                    if (message.serverContent?.turnComplete) {
-                        sendToRenderer('update-status', 'Listening...');
-                        // Clear message buffer for the next turn to prevent concatenation
-                        messageBuffer = '';
-                        currentTranscription = '';
-
-                        // Check if we have a pending reset AND if AI actually responded
-                        if (pendingReset && !isAutoResetting) {
-                            if (didGenerateResponse) {
-                                console.log('Executing pending auto-reset now that turn is complete...');
-                                pendingReset = false;
-                                didGenerateResponse = false; // Reset for next turn
-                                // Small delay to ensure UI updates complete
-                                setTimeout(() => {
-                                    autoResetSessionInBackground();
-                                }, 500);
-                            } else {
-                                console.log('Turn complete but no response generated (interrupted) - keeping pending reset, waiting for actual response');
-                                // Keep pendingReset = true, don't execute yet
-                            }
-                        } else if (didGenerateResponse) {
-                            // Only count responses that were actually generated
-                            responseCount++;
-                            console.log(`Response ${responseCount}/${MAX_RESPONSES_BEFORE_RESET} completed`);
-
-                            // Check if we need to reset after NEXT response
-                            if (responseCount >= MAX_RESPONSES_BEFORE_RESET && !isAutoResetting) {
-                                console.log('Auto-reset scheduled - will reset after next question is answered');
-                                pendingReset = true;
-                            }
-                        }
-
-                        // Always reset the flag for next turn
-                        didGenerateResponse = false;
-                    }
-                },
-                onerror: function (e) {
-                    console.debug('Error:', e.message);
-
-                    // Check if the error is related to invalid API key
-                    const isApiKeyError =
-                        e.message &&
-                        (e.message.includes('API key not valid') ||
-                            e.message.includes('invalid API key') ||
-                            e.message.includes('authentication failed') ||
-                            e.message.includes('unauthorized'));
-
-                    if (isApiKeyError) {
-                        console.log('Error due to invalid API key - stopping reconnection attempts');
-                        lastSessionParams = null; // Clear session params to prevent reconnection
-                        reconnectionAttempts = maxReconnectionAttempts; // Stop further attempts
-                        sendToRenderer('update-status', 'Invalid API Key');
-                        return;
-                    }
-
-                    // Check if the error is related to quota exceeded
-                    const isQuotaError =
-                        e.message &&
-                        (e.message.includes('exceeded your current quota') ||
-                            e.message.includes('quota exceeded') ||
-                            e.message.includes('RESOURCE_EXHAUSTED') ||
-                            e.message.includes('rate limit'));
-
-                    if (isQuotaError) {
-                        console.log('Error due to quota exceeded - stopping reconnection attempts');
-                        lastSessionParams = null; // Clear session params to prevent reconnection
-                        reconnectionAttempts = maxReconnectionAttempts; // Stop further attempts
-                        sendToRenderer('update-status', 'API Quota Exceed');
-                        return;
-                    }
-
-                    sendToRenderer('update-status', 'Error: ' + e.message);
-                },
-                onclose: function (e) {
-                    console.debug('Session closed:', e.reason);
-                    isSessionReady = false; // Reset ready state when session closes
-
-                    // Check if the session closed due to missing API key
-                    const isApiKeyMissing =
-                        e.reason &&
-                        (e.reason.toLowerCase().includes('api key not found') ||
-                            e.reason.toLowerCase().includes('pass a valid api key'));
-
-                    if (isApiKeyMissing) {
-                        console.log('Session closed due to missing API key - stopping reconnection attempts');
-                        lastSessionParams = null; // Clear session params to prevent reconnection
-                        reconnectionAttempts = maxReconnectionAttempts; // Stop further attempts
-                        sendToRenderer('update-status', 'No API Key Found');
-                        return;
-                    }
-
-                    // Check if the session closed due to invalid API key
-                    const isApiKeyError =
-                        e.reason &&
-                        (e.reason.toLowerCase().includes('api key not valid') ||
-                            e.reason.toLowerCase().includes('invalid api key') ||
-                            e.reason.toLowerCase().includes('invalid key') ||
-                            e.reason.toLowerCase().includes('authentication failed') ||
-                            e.reason.toLowerCase().includes('unauthorized'));
-
-                    if (isApiKeyError) {
-                        console.log('Session closed due to invalid API key - stopping reconnection attempts');
-                        lastSessionParams = null; // Clear session params to prevent reconnection
-                        reconnectionAttempts = maxReconnectionAttempts; // Stop further attempts
-                        sendToRenderer('update-status', 'Invalid API Key');
-                        return;
-                    }
-
-                    // Check if the session closed due to quota exceeded
-                    const isQuotaError =
-                        e.reason &&
-                        (e.reason.includes('exceeded your current quota') ||
-                            e.reason.includes('quota exceeded') ||
-                            e.reason.includes('RESOURCE_EXHAUSTED') ||
-                            e.reason.includes('rate limit'));
-
-                    if (isQuotaError) {
-                        console.log('Session closed due to quota exceeded - stopping reconnection attempts');
-                        lastSessionParams = null; // Clear session params to prevent reconnection
-                        reconnectionAttempts = maxReconnectionAttempts; // Stop further attempts
-                        sendToRenderer('update-status', 'API Quota Exceed');
-                        return;
-                    }
-
-                    // Attempt automatic reconnection for server-side closures
-                    if (lastSessionParams && reconnectionAttempts < maxReconnectionAttempts) {
-                        console.log('Attempting automatic reconnection...');
-                        attemptReconnection();
-                    } else {
-                        sendToRenderer('update-status', 'Session closed');
-                    }
-                },
-            },
-                config: {
-                    responseModalities: ['TEXT'],
-                    tools: enabledTools,
-                    // Generation settings from AdvancedView
-                    generationConfig: {
-                        temperature: generationSettings.temperature,
-                        topP: generationSettings.topP,
-                        maxOutputTokens: generationSettings.maxOutputTokens,
-                    },
-                    // Enable speaker diarization
-                    inputAudioTranscription: {
-                        enableSpeakerDiarization: true,
-                        minSpeakerCount: 2,
-                        maxSpeakerCount: 2,
-                    },
-                    contextWindowCompression: {
-                        triggerTokens: 28000,
-                        slidingWindow: {
-                            targetTokens: 13000
-                        }
-                    },
-                    speechConfig: { languageCode: language },
-                    systemInstruction: {
-                        parts: [{ text: systemPrompt }],
-                    },
-                },
-            });
-        } else {
-            // Coding/OA mode: Use regular Gemini API (not Live API) for better code quality
-            const regularModel = model || 'gemini-2.5-flash';
-            console.log(`💻 Coding/OA mode: Using ${regularModel} (regular API, screenshot-based)`);
-
-            // Enhanced prompt for coding mode - ULTRA AGGRESSIVE for direct answers
-            // Make Pro model even more aggressive about being concise
+            // Enhanced prompt for coding/interview mode - for coding mode add aggressive direct answer instructions
             const isProModel = regularModel.includes('pro');
             const codingPrompt = systemPrompt + `
 
@@ -689,12 +263,15 @@ CRITICAL FINAL REMINDER:
 NOW SOLVE THE CODING PROBLEM SHOWN IN THE SCREENSHOT.
 RESPONSE FORMAT: [approach sentence] + [code] + [complexity]`;
 
-            // For coding mode, we'll create a "session" object that mimics the live API
-            // but uses generateContent internally
+            // Create a "session" object that uses generateContentStream internally
+            // For coding/exam mode: use codingPrompt with aggressive direct answer instructions
+            // For interview mode: use base systemPrompt (interview profile handles the rest)
+            const sessionPrompt = (mode === 'coding') ? codingPrompt : systemPrompt;
+
             session = {
                 model: regularModel,
                 client: client,
-                systemPrompt: codingPrompt,
+                systemPrompt: sessionPrompt,
                 tools: enabledTools,
                 isClosed: false,
                 conversationHistory: [], // Track conversation history for context
@@ -752,10 +329,12 @@ RESPONSE FORMAT: [approach sentence] + [code] + [complexity]`;
                             const modelMaxTokens = getMaxOutputTokensForModel(this.model);
                             const effectiveMaxTokens = Math.min(generationSettings.maxOutputTokens, modelMaxTokens);
 
-                            // Gemini 3 Flash: use 'low' thinking for fastest responses
-                            // Gemini 3 Pro: use default 'high' thinking for best accuracy
+                            // Thinking levels:
+                            // Gemini 3 Flash interview mode → 'minimal' (fastest responses)
+                            // Gemini 3 Flash exam mode → 'low'
+                            // Gemini 3 Pro → 'high' (best accuracy)
                             const thinkingConfig = this.model === 'gemini-3-flash-preview'
-                                ? { thinkingLevel: 'low' }
+                                ? { thinkingLevel: currentMode === 'interview' ? 'minimal' : 'low' }
                                 : this.model === 'gemini-3-pro-preview'
                                     ? { thinkingLevel: 'high' }
                                     : undefined;
@@ -824,9 +403,11 @@ RESPONSE FORMAT: [approach sentence] + [code] + [complexity]`;
 
                                     console.log(`💬 Conversation history: ${this.conversationHistory.length / 2} turns`);
                                     sendToRenderer('update-status', 'Ready');
+                                    return responseText;
                                 } else {
                                     console.error('❌ No response text received');
                                     sendToRenderer('update-status', 'No response generated');
+                                    return null;
                                 }
                             } catch (streamError) {
                                 console.error('❌ Streaming error:', streamError);
@@ -853,13 +434,15 @@ RESPONSE FORMAT: [approach sentence] + [code] + [complexity]`;
 
                                     sendToRenderer('update-response', responseText);
                                     sendToRenderer('update-status', 'Ready');
+                                    return responseText;
                                 } else {
                                     throw streamError;
                                 }
                             }
                         }
+                        return null;
                     } catch (error) {
-                        console.error('❌ Error in coding mode:', error);
+                        console.error('❌ Error in Gemini session:', error);
 
                         // Show user-friendly short error message
                         let shortMsg = 'Error';
@@ -873,6 +456,7 @@ RESPONSE FORMAT: [approach sentence] + [code] + [complexity]`;
                         }
 
                         sendToRenderer('update-status', shortMsg);
+                        return null;
                     }
                 },
 
@@ -884,9 +468,6 @@ RESPONSE FORMAT: [approach sentence] + [code] + [complexity]`;
             };
 
             sendToRenderer('update-status', `${regularModel} ready (screenshot mode)`);
-            // Coding mode is immediately ready (no Live API setup delay)
-            isSessionReady = true;
-        }
 
         isInitializingSession = false;
         sendToRenderer('session-initializing', false);
@@ -1227,7 +808,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         }
     });
 
-    ipcMain.handle('send-image-content', async (event, { data, debug, isManual }) => {
+    ipcMain.handle('send-image-content', async (event, { data }) => {
         if (!geminiSessionRef.current) return { success: false, error: 'No active Gemini session' };
 
         try {
@@ -1243,49 +824,13 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
                 return { success: false, error: 'Image buffer too small' };
             }
 
-            // Check current mode to handle differently
-            const currentMode = lastSessionParams?.mode || 'interview';
-
-            // For interview mode manual screenshots, wait for session to be ready
-            if (currentMode === 'interview' && isManual && !isSessionReady) {
-                console.log('⏳ Waiting for Live API setup to complete...');
-                // Wait up to 10 seconds for setupComplete
-                let waitTime = 0;
-                while (!isSessionReady && waitTime < 10000) {
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    waitTime += 100;
-                }
-                if (!isSessionReady) {
-                    console.warn('⚠️ Session not ready after 10s - screenshot may fail');
-                    return { success: false, error: 'Session not ready yet - please wait a few seconds and try again' };
-                }
-                console.log('✅ Session ready, proceeding with screenshot');
-            }
-
             process.stdout.write('!');
 
-            if (currentMode === 'interview' && isManual) {
-                // Interview mode (Live API) + Manual screenshot (Ctrl+Enter):
-                // Send screenshot + smart prompt to analyze what's shown
-                // This helps when user wants to ask about what's on screen
-                await geminiSessionRef.current.sendRealtimeInput({
-                    media: { data: data, mimeType: 'image/jpeg' },
-                });
-
-                // Small delay to ensure screenshot is processed
-                await new Promise(resolve => setTimeout(resolve, 100));
-
-                // Send contextual prompt that analyzes the screenshot content
-                await geminiSessionRef.current.sendRealtimeInput({
-                    text: "Based on this screenshot: If you see a CODING PROBLEM (LeetCode, HackerRank, CodeSignal, etc. with a code editor), immediately provide the COMPLETE CODE SOLUTION using the EXACT function signature visible in the screenshot (same class name, method name, parameter count/types/names, return type). DO NOT modify the signature - if it shows 3 parameters, your solution MUST use all 3 parameters. DO NOT search online for similar problems. Format: [1-line approach] + [clean code block without comments using EXACT signature] + [complexity] + [algorithm explanation with 2-4 brief bullet points so I can explain the approach to the interviewer]. If it's an APTITUDE/MCQ/REASONING question, answer directly and concisely in 2-3 sentences - DO NOT say 'This is a word problem' or 'not a coding question', just give the answer. If it's a regular interview question, answer briefly (2-3 sentences). If it's just code to review, explain what it does. If unclear, describe what you see."
-                });
-            } else {
-                // Either exam mode OR automated screenshots in interview mode:
-                // Just send screenshot alone (no text prompt to trigger response)
-                await geminiSessionRef.current.sendRealtimeInput({
-                    media: { data: data, mimeType: 'image/jpeg' },
-                });
-            }
+            // Send screenshot to Gemini session (exam/coding mode)
+            // Interview mode screenshots route through groq.js instead
+            await geminiSessionRef.current.sendRealtimeInput({
+                media: { data: data, mimeType: 'image/jpeg' },
+            });
 
             return { success: true };
         } catch (error) {
@@ -1330,39 +875,19 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
                 return { success: false, error: 'Invalid text message' };
             }
 
-            // Check current mode to handle differently
-            const currentMode = lastSessionParams?.mode || 'interview';
-
             // Add language reminder for non-English languages
             let finalText = text.trim();
             if (storedLanguageName !== 'English') {
                 finalText += ` (Remember: Respond in ${storedLanguageName})`;
             }
 
-            if (currentMode === 'interview') {
-                // Interview mode (Live API): Send screenshot and text SEPARATELY
-                // Live API doesn't support media + text in one request
-                console.log('Interview mode: Sending screenshot + text in TWO separate requests:', finalText);
+            console.log('Sending screenshot + text:', finalText);
+            process.stdout.write('!');
 
-                // 1. Send screenshot first
-                process.stdout.write('!');
-                await geminiSessionRef.current.sendRealtimeInput({
-                    media: { data: imageData, mimeType: 'image/jpeg' }
-                });
-
-                // 2. Send text prompt second
-                await geminiSessionRef.current.sendRealtimeInput({
-                    text: finalText
-                });
-            } else {
-                // Exam Assistant mode (Regular API): Send screenshot + text together in ONE request
-                console.log('Exam mode: Sending screenshot + text in one request:', finalText);
-
-                await geminiSessionRef.current.sendRealtimeInput({
-                    media: { data: imageData, mimeType: 'image/jpeg' },
-                    text: finalText
-                });
-            }
+            await geminiSessionRef.current.sendRealtimeInput({
+                media: { data: imageData, mimeType: 'image/jpeg' },
+                text: finalText
+            });
 
             return { success: true };
         } catch (error) {
@@ -1436,13 +961,6 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         try {
             stopMacOSAudioCapture();
 
-            // Clear session params to prevent reconnection when user closes session
-            lastSessionParams = null;
-
-            // Reset response counter
-            responseCount = 0;
-            console.log('🔄 Response counter reset on session close');
-
             // Cleanup any pending resources and stop audio/video capture
             if (geminiSessionRef.current) {
                 await geminiSessionRef.current.close();
@@ -1469,26 +987,6 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         }
     });
 
-    // Conversation history IPC handlers
-    ipcMain.handle('get-current-session', async event => {
-        try {
-            return { success: true, data: getCurrentSessionData() };
-        } catch (error) {
-            console.error('Error getting current session:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.handle('start-new-session', async event => {
-        try {
-            initializeNewSession();
-            return { success: true, sessionId: currentSessionId };
-        } catch (error) {
-            console.error('Error starting new session:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
     ipcMain.handle('update-google-search-setting', async (event, enabled) => {
         try {
             console.log('Google Search setting updated to:', enabled);
@@ -1502,15 +1000,38 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     });
 }
 
+/**
+ * Chat with Gemini using text (and optional image).
+ * Used by groq.js when interview model is gemini-3-flash-preview:
+ *   Groq Whisper (STT) → transcription → chatWithGeminiText() → Gemini response
+ *
+ * @param {string} text - The transcription or prompt text
+ * @param {string|null} imageData - Optional base64 image data for screenshot analysis
+ * @returns {Promise<string|null>} The response text, or null on error
+ */
+async function chatWithGeminiText(text, imageData = null) {
+    const session = global.geminiSessionRef?.current;
+    if (!session) {
+        console.error('[GEMINI] No active session for text chat');
+        sendToRenderer('update-status', 'No Gemini session');
+        return null;
+    }
+
+    const input = {};
+    if (text) input.text = text;
+    if (imageData) {
+        input.media = { data: imageData, mimeType: 'image/jpeg' };
+    }
+
+    return await session.sendRealtimeInput(input);
+}
+
 module.exports = {
     initializeGeminiSession,
+    chatWithGeminiText,
     getEnabledTools,
     getStoredSetting,
     sendToRenderer,
-    initializeNewSession,
-    saveConversationTurn,
-    getCurrentSessionData,
-    sendReconnectionContext,
     killExistingSystemAudioDump,
     startMacOSAudioCapture,
     convertStereoToMono,
@@ -1519,6 +1040,4 @@ module.exports = {
     stopMacOSAudioCapture,
     sendAudioToGemini,
     setupGeminiIpcHandlers,
-    attemptReconnection,
-    formatSpeakerResults,
 };
