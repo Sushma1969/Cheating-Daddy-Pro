@@ -316,8 +316,8 @@ async function transcribeWithGroq(wavBuffer) {
                     console.error('[GROQ] Whisper API Error:', res.statusCode, data);
                     // Handle specific error codes like Gemini does - user-friendly messages
                     if (res.statusCode === 401) {
-                        sendToRenderer('update-status', 'Invalid API Key');
-                        reject(new Error('Invalid API Key'));
+                        sendToRenderer('update-status', 'Invalid API Key (Groq)');
+                        reject(new Error('Invalid API Key (Groq)'));
                     } else if (res.statusCode === 429) {
                         const rateLimit = parseRateLimitError(data);
                         scheduleRateLimitRecovery(rateLimit.statusMessage, rateLimit.recoveryMs);
@@ -506,8 +506,8 @@ async function chatWithLlama(userMessage, model = 'llama-4-maverick', imageData 
                     console.error('[GROQ] Chat API Error:', res.statusCode, rawErrorBody);
                     // Handle specific error codes like Gemini does
                     if (res.statusCode === 401) {
-                        sendToRenderer('update-status', 'Invalid API Key');
-                        reject(new Error('Invalid API Key'));
+                        sendToRenderer('update-status', 'Invalid API Key (Groq)');
+                        reject(new Error('Invalid API Key (Groq)'));
                     } else if (res.statusCode === 429) {
                         const rateLimit = parseRateLimitError(rawErrorBody);
                         scheduleRateLimitRecovery(rateLimit.statusMessage, rateLimit.recoveryMs);
@@ -712,7 +712,7 @@ async function processAudioBuffer(model = null) {
     } catch (error) {
         console.error('[GROQ] Error processing audio:', error);
         // Only update status if it's not already showing a user-friendly error
-        if (!['Invalid API Key', 'API Quota Exceeded', 'Audio too long', 'Request too large', 'Server error', 'Connection error', 'Invalid request'].includes(error.message) && !error.message.startsWith('Rate Limit:')) {
+        if (!['Invalid API Key (Groq)', 'Invalid API Key (Gemini)', 'API Quota Exceeded', 'Audio too long', 'Request too large', 'Server error', 'Connection error', 'Invalid request'].includes(error.message) && !error.message.startsWith('Rate Limit:')) {
             sendToRenderer('update-status', 'Processing failed');
         }
         isSpeaking = false;
@@ -790,7 +790,7 @@ async function flushAudioBuffer(model = null) {
     } catch (error) {
         console.error('[GROQ] Error flushing audio:', error);
         // Only update status if it's not already showing a user-friendly error
-        if (!['Invalid API Key', 'API Quota Exceeded', 'Audio too long', 'Request too large', 'Server error', 'Connection error', 'Invalid request'].includes(error.message) && !error.message.startsWith('Rate Limit:')) {
+        if (!['Invalid API Key (Groq)', 'Invalid API Key (Gemini)', 'API Quota Exceeded', 'Audio too long', 'Request too large', 'Server error', 'Connection error', 'Invalid request'].includes(error.message) && !error.message.startsWith('Rate Limit:')) {
             sendToRenderer('update-status', 'Processing failed');
         }
         return null;
@@ -831,7 +831,7 @@ async function analyzeWithLlama(text, imageData, model = 'llama-4-maverick') {
     } catch (error) {
         console.error('[GROQ] Error analyzing:', error);
         // Only update status if it's not already showing a user-friendly error
-        if (!['Invalid API Key', 'API Quota Exceeded', 'Audio too long', 'Request too large', 'Server error', 'Connection error', 'Invalid request'].includes(error.message) && !error.message.startsWith('Rate Limit:')) {
+        if (!['Invalid API Key (Groq)', 'Invalid API Key (Gemini)', 'API Quota Exceeded', 'Audio too long', 'Request too large', 'Server error', 'Connection error', 'Invalid request'].includes(error.message) && !error.message.startsWith('Rate Limit:')) {
             sendToRenderer('update-status', 'Analysis failed');
         }
         return null;

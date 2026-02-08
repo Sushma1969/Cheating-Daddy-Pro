@@ -447,12 +447,13 @@ RESPONSE FORMAT: [approach sentence] + [code] + [complexity]`;
                         // Show user-friendly short error message
                         let shortMsg = 'Error';
 
-                        if (error.message && error.message.toLowerCase().includes('429')) {
+                        const errMsg = (error.message || '').toLowerCase();
+                        if (errMsg.includes('429')) {
                             shortMsg = 'Rate limit exceeded';
-                        } else if (error.message && error.message.toLowerCase().includes('503')) {
+                        } else if (errMsg.includes('503')) {
                             shortMsg = 'Server overloaded';
-                        } else if (error.message && error.message.toLowerCase().includes('401')) {
-                            shortMsg = 'Invalid API key';
+                        } else if (errMsg.includes('401') || errMsg.includes('api_key_invalid') || errMsg.includes('api key not valid')) {
+                            shortMsg = 'Invalid API Key (Gemini)';
                         }
 
                         sendToRenderer('update-status', shortMsg);
