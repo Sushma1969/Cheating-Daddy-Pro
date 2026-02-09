@@ -389,6 +389,7 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                     try {
                         // Only process image and text inputs for coding mode
                         if (input.media || input.text) {
+                            const requestStartTime = Date.now();
                             console.log(`📸 Sending to ${this.model}`);
                             // In interview mode, groq.js already sets "Generating..." — don't override
                             // In coding/exam mode, show "Analyzing..." for screenshot processing
@@ -476,6 +477,14 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                                     ? { thinkingLevel: 'high' }
                                     : undefined;
 
+                            // Interview mode: skip Google Search tool entirely (saves 2-5s latency per request)
+                            // - Text Q&A ("what is polymorphism?") doesn't need web search
+                            // - Coding screenshots (LeetCode) don't need web search
+                            // Exam/coding mode: keep Search enabled (may need current info for complex problems)
+                            const requestTools = (currentMode === 'interview')
+                                ? undefined
+                                : (this.tools.length > 0 ? this.tools : undefined);
+
                             const streamResult = await this.client.models.generateContentStream({
                                 model: this.model,
                                 contents: contents,
@@ -486,7 +495,7 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                                     maxOutputTokens: effectiveMaxTokens,
                                     ...(thinkingConfig ? { thinkingConfig } : {}),
                                 },
-                                tools: this.tools.length > 0 ? this.tools : undefined,
+                                tools: requestTools,
                             });
 
                             // Stream the response as it arrives
@@ -498,6 +507,7 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                             // Streaming optimization: Batch UI updates for smoother rendering
                             let lastUpdateTime = Date.now();
                             const UPDATE_INTERVAL = 50; // Update UI every 50ms for smooth rendering
+                            let firstChunkLogged = false;
 
                             try {
                                 for await (const chunk of streamToIterate) {
@@ -506,6 +516,10 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                                         if (candidate.content && candidate.content.parts) {
                                             for (const part of candidate.content.parts) {
                                                 if (part.text) {
+                                                    if (!firstChunkLogged) {
+                                                        console.log(`⏱️ First token: ${Date.now() - requestStartTime}ms`);
+                                                        firstChunkLogged = true;
+                                                    }
                                                     responseText += part.text;
 
                                                     // Batch updates: Only send to UI every 50ms for smoother rendering
@@ -524,7 +538,7 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                                 sendToRenderer('update-response', responseText);
 
                                 if (responseText && responseText.trim()) {
-                                    console.log(`✅ Got response: ${responseText.length} chars`);
+                                    console.log(`✅ Got response: ${responseText.length} chars in ${Date.now() - requestStartTime}ms`);
 
                                     // Save to conversation history with full data
                                     this.conversationHistory.push(
