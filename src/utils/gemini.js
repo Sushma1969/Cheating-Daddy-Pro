@@ -395,19 +395,35 @@ RESPONSE FORMAT: [approach sentence] + [code] + [complexity]`;
                                 }
                             }
 
-                            // Build full conversation with history
+                            const hasImage = !!input.media;
+
+                            // Build conversation with history
+                            // For text-only requests: strip ALL images from history to reduce payload
+                            // (images are 200KB+ base64 each — re-sending them adds seconds of latency)
+                            let historyForRequest;
+                            if (!hasImage && this.conversationHistory.some(e => e.role === 'user' && e.parts?.some(p => p.inlineData))) {
+                                historyForRequest = this.conversationHistory.map(entry => {
+                                    if (entry.role === 'user' && entry.parts && entry.parts.some(p => p.inlineData)) {
+                                        return {
+                                            role: entry.role,
+                                            parts: entry.parts.map(p => p.inlineData ? { text: '[screenshot]' } : p)
+                                        };
+                                    }
+                                    return entry;
+                                });
+                            } else {
+                                historyForRequest = this.conversationHistory;
+                            }
+
                             const contents = [
-                                ...this.conversationHistory,
+                                ...historyForRequest,
                                 { role: 'user', parts: parts }
                             ];
 
-                            // Log caching status for performance monitoring
                             if (this.conversationHistory.length > 0) {
-                                console.log(`Using context cache for faster response (request #${this.conversationHistory.length / 2 + 1})`);
+                                console.log(`Context: ${this.conversationHistory.length / 2} turns (request #${this.conversationHistory.length / 2 + 1})`);
                             }
 
-                            // Use streaming for faster display with context caching
-                            // Ensure maxOutputTokens doesn't exceed model's limit
                             const modelMaxTokens = getMaxOutputTokensForModel(this.model);
                             const effectiveMaxTokens = Math.min(generationSettings.maxOutputTokens, modelMaxTokens);
 
@@ -427,17 +443,11 @@ RESPONSE FORMAT: [approach sentence] + [code] + [complexity]`;
                                 systemInstruction: { parts: [{ text: this.systemPrompt }] },
                                 generationConfig: {
                                     temperature: generationSettings.temperature,
-                                    topK: 40,
                                     topP: generationSettings.topP,
                                     maxOutputTokens: effectiveMaxTokens,
                                     ...(thinkingConfig ? { thinkingConfig } : {}),
                                 },
                                 tools: this.tools.length > 0 ? this.tools : undefined,
-                                // Context caching: Cache system prompt for 5 minutes (one interview session)
-                                // This speeds up subsequent requests by ~50% by reusing cached content
-                                cachedContent: {
-                                    ttl: '300s', // 5 minutes - good for one coding/interview session
-                                },
                             });
 
                             // Stream the response as it arrives
@@ -477,11 +487,35 @@ RESPONSE FORMAT: [approach sentence] + [code] + [complexity]`;
                                 if (responseText && responseText.trim()) {
                                     console.log(`✅ Got response: ${responseText.length} chars`);
 
-                                    // Save to conversation history
+                                    // Save to conversation history with full data
                                     this.conversationHistory.push(
                                         { role: 'user', parts: parts },
                                         { role: 'model', parts: [{ text: responseText }] }
                                     );
+
+                                    // Cap at 8 turns (16 entries)
+                                    if (this.conversationHistory.length > 16) {
+                                        this.conversationHistory = this.conversationHistory.slice(-16);
+                                    }
+
+                                    // Strip images from older turns, keep only last 3 screenshots
+                                    // Images are 200KB+ base64 — re-sending them all balloons latency from 2s to 10s+
+                                    let imageCount = 0;
+                                    for (let i = this.conversationHistory.length - 1; i >= 0; i--) {
+                                        const entry = this.conversationHistory[i];
+                                        if (entry.role === 'user' && entry.parts) {
+                                            const hasImage = entry.parts.some(p => p.inlineData);
+                                            if (hasImage) {
+                                                imageCount++;
+                                                if (imageCount > 3) {
+                                                    // Replace old images with lightweight placeholder
+                                                    entry.parts = entry.parts.map(p =>
+                                                        p.inlineData ? { text: '[screenshot]' } : p
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
 
                                     console.log(`💬 Conversation history: ${this.conversationHistory.length / 2} turns`);
                                     sendToRenderer('update-status', 'Ready');
@@ -508,11 +542,28 @@ RESPONSE FORMAT: [approach sentence] + [code] + [complexity]`;
                                 if (responseText && responseText.trim()) {
                                     console.log(`✅ Got response (fallback): ${responseText.length} chars`);
 
-                                    // Save to conversation history
+                                    // Save to conversation history (same image-stripping as main path)
                                     this.conversationHistory.push(
                                         { role: 'user', parts: parts },
                                         { role: 'model', parts: [{ text: responseText }] }
                                     );
+                                    if (this.conversationHistory.length > 16) {
+                                        this.conversationHistory = this.conversationHistory.slice(-16);
+                                    }
+                                    let imgCount = 0;
+                                    for (let i = this.conversationHistory.length - 1; i >= 0; i--) {
+                                        const entry = this.conversationHistory[i];
+                                        if (entry.role === 'user' && entry.parts) {
+                                            if (entry.parts.some(p => p.inlineData)) {
+                                                imgCount++;
+                                                if (imgCount > 3) {
+                                                    entry.parts = entry.parts.map(p =>
+                                                        p.inlineData ? { text: '[screenshot]' } : p
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
 
                                     sendToRenderer('update-response', responseText);
                                     sendToRenderer('update-status', 'Ready');

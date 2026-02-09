@@ -337,25 +337,43 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
             console.log('Linux capture started - system audio:', mediaStream.getAudioTracks().length > 0);
         } else {
             // Windows - use display media with loopback for system audio
-            mediaStream = await navigator.mediaDevices.getDisplayMedia({
-                video: {
-                    frameRate: 1,
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 },
-                },
-                audio: {
-                    sampleRate: SAMPLE_RATE,
-                    channelCount: 1,
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
-                },
-            });
+            try {
+                mediaStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
+                        frameRate: 1,
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                    },
+                    audio: {
+                        sampleRate: SAMPLE_RATE,
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                    },
+                });
 
-            console.log('Windows capture started with loopback audio');
+                console.log('Windows capture started with loopback audio');
 
-            // Setup audio processing for Windows loopback audio only
-            setupWindowsLoopbackProcessing();
+                // Setup audio processing for Windows loopback audio only
+                setupWindowsLoopbackProcessing();
+            } catch (audioErr) {
+                console.warn('Windows audio loopback failed, retrying video-only:', audioErr.message);
+
+                // Fallback: capture screen without system audio
+                // Audio loopback can fail if no audio output device, driver issues, or audio service stopped
+                // Screenshots will still work; interview mode mic audio goes through Groq Whisper separately
+                mediaStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
+                        frameRate: 1,
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                    },
+                    audio: false,
+                });
+
+                console.log('Windows capture started (video-only, no system audio)');
+            }
         }
 
         console.log('MediaStream obtained:', {
