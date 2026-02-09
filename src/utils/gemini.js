@@ -358,7 +358,7 @@ RULES:
 2. Formula questions: State the formula, define variables in ONE line each. NO derivations, NO proofs, NO examples, NO step-by-step walkthroughs.
 3. Concept questions: Define it in 1-2 sentences. Give 1 example ONLY if asked. NO listing every variant or type.
 4. NEVER use tables, numbered lists longer than 3 items, or multi-section responses for spoken answers.
-5. CODING questions from screenshots: Follow the structured format (Approach + Code + Complexity).
+5. CODING questions (screenshots OR audio requests like "write code for X"): Use the FULL 5-section format: Approach → Intuition (2-4 paragraphs) → Implementation (code) → Complexity → Algorithm. Do NOT shorten coding answers.
 
 BAD (too long): "Linear Regression uses the formula y = β0 + β1*x where... [followed by OLS derivation, error terms, 5 examples]"
 GOOD (interview-ready): "The formula is **ŷ = β₀ + β₁x**, where β₀ is the intercept and β₁ is the slope representing the change in y per unit x."
@@ -388,7 +388,11 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                         // Only process image and text inputs for coding mode
                         if (input.media || input.text) {
                             console.log(`📸 Sending to ${this.model}`);
-                            sendToRenderer('update-status', 'Analyzing...');
+                            // In interview mode, groq.js already sets "Generating..." — don't override
+                            // In coding/exam mode, show "Analyzing..." for screenshot processing
+                            if (currentMode !== 'interview') {
+                                sendToRenderer('update-status', 'Analyzing...');
+                            }
 
                             // Build the parts array for current message
                             const parts = [];
@@ -447,10 +451,17 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                             const modelMaxTokens = getMaxOutputTokensForModel(this.model);
                             let effectiveMaxTokens = Math.min(generationSettings.maxOutputTokens, modelMaxTokens);
 
-                            // Interview mode: hard cap for concise spoken-style answers
+                            // Interview mode token limits:
+                            // - Screenshot/image requests (coding problems): force 4096 for full structured answer
+                            //   (overrides UI setting since the default 1024 is too low for Intuition + code)
+                            // - Text-only spoken answers: cap at 1024 for concise interview responses
                             // Exam/coding mode needs full output for detailed code solutions
                             if (currentMode === 'interview') {
-                                effectiveMaxTokens = Math.min(effectiveMaxTokens, 1024);
+                                if (hasImage) {
+                                    effectiveMaxTokens = Math.min(4096, modelMaxTokens);
+                                } else {
+                                    effectiveMaxTokens = Math.min(effectiveMaxTokens, 1024);
+                                }
                             }
 
                             // Thinking levels:
@@ -544,11 +555,13 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                                     }
 
                                     console.log(`💬 Conversation history: ${this.conversationHistory.length / 2} turns`);
-                                    sendToRenderer('update-status', 'Ready');
+                                    // Interview mode: "Listening..." (matches Groq Llama flow)
+                                    // Coding/exam mode: "Ready" (waiting for next screenshot)
+                                    sendToRenderer('update-status', currentMode === 'interview' ? 'Listening...' : 'Ready');
                                     return responseText;
                                 } else {
                                     console.error('❌ No response text received');
-                                    sendToRenderer('update-status', 'No response generated');
+                                    sendToRenderer('update-status', currentMode === 'interview' ? 'Listening...' : 'No response generated');
                                     return null;
                                 }
                             } catch (streamError) {
@@ -592,7 +605,7 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                                     }
 
                                     sendToRenderer('update-response', responseText);
-                                    sendToRenderer('update-status', 'Ready');
+                                    sendToRenderer('update-status', currentMode === 'interview' ? 'Listening...' : 'Ready');
                                     return responseText;
                                 } else {
                                     throw streamError;
@@ -1190,9 +1203,14 @@ async function chatWithGeminiText(text, imageData = null) {
 
     const input = {};
     if (text) {
-        // Append brevity hint — this function is only called from interview mode (via groq.js)
-        // Gemini ignores system prompt brevity rules unless reinforced in the user message
-        input.text = text + ' (Answer concisely in 2-4 sentences. No long explanations.)';
+        // This function is only called from interview mode (via groq.js)
+        // For image requests (coding screenshots): no brevity hint — let system prompt's 5-section format apply
+        // For text-only (audio transcriptions): add smart brevity hint that preserves coding format
+        if (imageData) {
+            input.text = text;
+        } else {
+            input.text = text + ' (For non-coding questions: answer concisely in 2-4 sentences. For coding requests: use full 5-section format with Intuition.)';
+        }
     }
     if (imageData) {
         input.media = { data: imageData, mimeType: 'image/jpeg' };
