@@ -620,23 +620,37 @@ export class CustomizeView extends LitElement {
 
         // Auto-set mode based on profile
         if (this.selectedProfile === 'exam') {
-            // Exam Assistant -> Coding/OA mode
+            // Save current model for interview mode before switching
+            if (this.selectedMode === 'interview') {
+                localStorage.setItem('lastModel_interview', this.selectedModel);
+            }
+
             this.selectedMode = 'coding';
             localStorage.setItem('selectedMode', 'coding');
 
-            // Validate model for coding mode
+            // Restore last-used coding model, or validate current one
             const validCodingModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3-pro-preview'];
-            if (!validCodingModels.includes(this.selectedModel)) {
+            const lastCodingModel = localStorage.getItem('lastModel_coding');
+            if (lastCodingModel && validCodingModels.includes(lastCodingModel)) {
+                this.selectedModel = lastCodingModel;
+            } else if (!validCodingModels.includes(this.selectedModel)) {
                 this.selectedModel = 'gemini-2.5-flash';
             }
         } else {
-            // All other profiles -> Interview mode
+            // Save current model for coding mode before switching
+            if (this.selectedMode === 'coding') {
+                localStorage.setItem('lastModel_coding', this.selectedModel);
+            }
+
             this.selectedMode = 'interview';
             localStorage.setItem('selectedMode', 'interview');
 
-            // Validate model for interview mode
+            // Restore last-used interview model, or validate current one
             const validInterviewModels = ['gemini-2.5-flash-lite', 'llama-4-maverick', 'llama-4-scout'];
-            if (!validInterviewModels.includes(this.selectedModel)) {
+            const lastInterviewModel = localStorage.getItem('lastModel_interview');
+            if (lastInterviewModel && validInterviewModels.includes(lastInterviewModel)) {
+                this.selectedModel = lastInterviewModel;
+            } else if (!validInterviewModels.includes(this.selectedModel)) {
                 this.selectedModel = 'llama-4-maverick';
             }
         }
@@ -1090,18 +1104,28 @@ export class CustomizeView extends LitElement {
         this.selectedMode = e.target.value;
         localStorage.setItem('selectedMode', this.selectedMode);
 
-        // In interview mode, user can choose between Gemini Live and Groq Llama models
+        // In interview mode, user can choose between Gemini and Groq Llama models
         // In coding mode, user can choose between flash and pro
         if (this.selectedMode === 'interview') {
-            // Keep current model if it's valid for interview mode, otherwise default
+            // Save current model for coding mode before switching
+            localStorage.setItem('lastModel_coding', this.selectedModel);
+
             const validInterviewModels = ['gemini-2.5-flash-lite', 'llama-4-maverick', 'llama-4-scout'];
-            if (!validInterviewModels.includes(this.selectedModel)) {
+            const lastInterviewModel = localStorage.getItem('lastModel_interview');
+            if (lastInterviewModel && validInterviewModels.includes(lastInterviewModel)) {
+                this.selectedModel = lastInterviewModel;
+            } else if (!validInterviewModels.includes(this.selectedModel)) {
                 this.selectedModel = 'llama-4-maverick';
             }
         } else {
-            // Keep current model selection for coding mode
+            // Save current model for interview mode before switching
+            localStorage.setItem('lastModel_interview', this.selectedModel);
+
             const validCodingModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3-pro-preview'];
-            if (!validCodingModels.includes(this.selectedModel)) {
+            const lastCodingModel = localStorage.getItem('lastModel_coding');
+            if (lastCodingModel && validCodingModels.includes(lastCodingModel)) {
+                this.selectedModel = lastCodingModel;
+            } else if (!validCodingModels.includes(this.selectedModel)) {
                 this.selectedModel = 'gemini-3-pro-preview';
             }
         }
@@ -1115,6 +1139,8 @@ export class CustomizeView extends LitElement {
     async handleModelChange(e) {
         this.selectedModel = e.target.value;
         localStorage.setItem('selectedModel', this.selectedModel);
+        // Remember this model for the current mode so it persists across mode switches
+        localStorage.setItem(`lastModel_${this.selectedMode}`, this.selectedModel);
         // Dispatch custom event for same-window listeners (like AdvancedView)
         window.dispatchEvent(new CustomEvent('modelChanged', { detail: { model: this.selectedModel } }));
 
