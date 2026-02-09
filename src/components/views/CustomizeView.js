@@ -1257,7 +1257,7 @@ export class CustomizeView extends LitElement {
                                 <div class="form-group">
                                     <label class="form-label">Mode (Fixed for ${this.getProfileNames()[this.selectedProfile]})</label>
                                     <div class="mode-display-box">
-                                        🎤 Interview Mode (Real-time Audio/Video)
+                                        🎤 Interview Mode (Real-time Audio)
                                     </div>
                                     <div class="form-description">${this.getProfileNames()[this.selectedProfile]} profile uses real-time audio processing for live interview interactions.</div>
                                 </div>
