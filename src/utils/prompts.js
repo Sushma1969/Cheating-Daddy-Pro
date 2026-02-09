@@ -992,8 +992,124 @@ function getCondensedSystemPrompt(profile, customPrompt = '') {
     return buildCondensedSystemPrompt(profile, customPrompt);
 }
 
+/**
+ * Get per-message hint for Gemini 3 Flash in interview mode.
+ * Gemini follows per-message instructions better than system prompt alone,
+ * so we append detailed formatting rules to each user message.
+ * Profile-aware: interview profile gets coding instructions, other profiles get their own rules.
+ *
+ * @param {boolean} hasImage - Whether this request includes a screenshot
+ * @param {string} profile - The current profile (interview, sales, meeting, presentation, negotiation)
+ * @returns {string} The instruction hint to append after the user's text
+ */
+function getGeminiMessageHint(hasImage, profile = 'interview') {
+    // Interview profile — has coding questions + non-coding Q&A
+    if (profile === 'interview') {
+        if (hasImage) {
+            // Screenshot coding problems — full 5-section structured format
+            return `
+
+[INSTRUCTIONS — Follow these EXACTLY:]
+- IMMEDIATELY provide a COMPLETE CODE SOLUTION — do NOT describe the UI or screenshot
+- PRESERVE THE EXACT FUNCTION SIGNATURE from the screenshot (class name, method name, parameters, return type)
+- NEVER change parameter names, types, or count — use the EXACT signature shown
+- DETECT the programming language from the code editor
+
+MANDATORY 5-SECTION FORMAT:
+1. **Approach: [Name]** — e.g., "Approach: HashMap Lookup", "Approach: Two Pointers"
+2. **Intuition** — Write 2-4 detailed paragraphs explaining:
+   - The core logic and reasoning behind the solution
+   - Key insights that make this approach work
+   - Mathematical concepts or patterns if applicable
+   - WHY this approach solves the problem effectively
+3. **Implementation** — Clean, optimized code with NO COMMENTS inside the code block. Use the EXACT function signature from the screenshot. Ready-to-run solution.
+4. **Complexity Analysis** — Time complexity: O(...) with brief explanation. Space complexity: O(...) with brief explanation.
+5. **Algorithm** — 2-4 numbered steps explaining how the algorithm works, clear enough to explain to the interviewer.
+
+NEVER skip the Intuition section. NEVER generate sample Q&A or practice questions. Start with "Approach:" immediately.`;
+        } else {
+            // Audio transcriptions — brevity for non-coding, full format for coding requests
+            return `
+
+[INSTRUCTIONS — Follow these EXACTLY:]
+
+IF this is a CODING request (write code, implement algorithm, use X approach, solve problem):
+Provide the FULL 5-SECTION structured solution:
+1. **Approach: [Name]** — Name the technique
+2. **Intuition** — 2-4 detailed paragraphs explaining WHY this approach works, key insights, core logic
+3. **Implementation** — Full working code block, NO COMMENTS inside, ready to run
+4. **Complexity Analysis** — Time O(...) and Space O(...) with brief explanations
+5. **Algorithm** — 2-4 numbered steps explaining how it works
+NEVER skip the Intuition section for coding problems.
+
+IF this is a NON-CODING question (behavioral, conceptual, formula, aptitude):
+- Answer concisely in 2-4 sentences MAX. Direct answer + one brief reason, done.
+- Formula questions: State the formula, define variables briefly. NO derivations or proofs.
+- Behavioral: 2-3 sentences, natural and conversational.
+- Technical concepts: 3-5 sentences with clear explanation.
+- MCQ/Aptitude: Direct answer option + 1-2 sentence reasoning.
+
+NEVER generate sample Q&A, practice questions, or follow-up questions in your response.`;
+        }
+    }
+
+    // Sales profile — short, consultative responses
+    if (profile === 'sales') {
+        if (hasImage) {
+            return `
+
+[INSTRUCTIONS:] Analyze this screenshot and help with the sales situation shown. Keep response SHORT (1-3 sentences). Sound like a trusted consultant — conversational, not pushy. Use **bold** for key numbers/points. Focus on building rapport and solving their problem.`;
+        }
+        return `
+
+[INSTRUCTIONS:] Keep response SHORT and NATURAL (1-3 sentences max). Sound conversational and consultative — like a trusted advisor, not a salesperson. Use **bold** for key numbers/points only. Focus on genuine connection and solving problems. NEVER write long paragraphs.`;
+    }
+
+    // Meeting profile — professional, clear communication
+    if (profile === 'meeting') {
+        if (hasImage) {
+            return `
+
+[INSTRUCTIONS:] Analyze this screenshot and help with the meeting context shown. Keep response SHORT (1-3 sentences). Sound professional but approachable. Use **bold** for key points, numbers, and action items. Focus on clear, actionable communication.`;
+        }
+        return `
+
+[INSTRUCTIONS:] Keep response SHORT and PROFESSIONAL (1-3 sentences max). Sound conversational yet competent — approachable but not casual. Use **bold** for key points, deadlines, and action items. Focus on clear communication that moves things forward. NEVER write long paragraphs.`;
+    }
+
+    // Presentation profile — confident, engaging responses
+    if (profile === 'presentation') {
+        if (hasImage) {
+            return `
+
+[INSTRUCTIONS:] Analyze this screenshot and help with the presentation context shown. Keep response SHORT (1-3 sentences). Sound confident and engaging — like an expert who makes things easy to understand. Use **bold** for key stats and points.`;
+        }
+        return `
+
+[INSTRUCTIONS:] Keep response SHORT and ENGAGING (1-3 sentences max). Sound confident but conversational — like a presenter who really knows their stuff. Use **bold** for key stats, numbers, and points. Focus on being clear and compelling. NEVER write long paragraphs.`;
+    }
+
+    // Negotiation profile — strategic, collaborative responses
+    if (profile === 'negotiation') {
+        if (hasImage) {
+            return `
+
+[INSTRUCTIONS:] Analyze this screenshot and help with the negotiation context shown. Keep response SHORT (1-3 sentences). Sound collaborative and solution-focused — find win-win outcomes. Use **bold** for key numbers, terms, and value points.`;
+        }
+        return `
+
+[INSTRUCTIONS:] Keep response SHORT and STRATEGIC (1-3 sentences max). Sound collaborative and solution-focused — like someone who wants to find a deal that works for both sides. Use **bold** for key numbers and terms. Focus on value and partnership. NEVER write long paragraphs.`;
+    }
+
+    // Fallback — generic brevity hint
+    return `
+
+[INSTRUCTIONS:] Keep response concise (1-3 sentences). Be natural and conversational. Use **bold** for key points only.`;
+}
+
 module.exports = {
     profilePrompts,
     getSystemPrompt,
     getCondensedSystemPrompt,
+    getGeminiMessageHint,
 };

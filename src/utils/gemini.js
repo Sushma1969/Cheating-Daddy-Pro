@@ -2,7 +2,7 @@ const { GoogleGenAI } = require('@google/genai');
 const { BrowserWindow, ipcMain } = require('electron');
 const { spawn } = require('child_process');
 const { saveDebugAudio } = require('../audioUtils');
-const { getSystemPrompt } = require('./prompts');
+const { getSystemPrompt, getGeminiMessageHint } = require('./prompts');
 const { VADProcessor } = require('./vad');
 
 // Session tracking
@@ -18,8 +18,9 @@ let macVADEnabled = false;
 let macVADMode = 'automatic';
 let macMicrophoneEnabled = true;
 
-// Track current session mode
+// Track current session mode and profile
 let currentMode = 'interview';
+let currentProfile = 'interview';
 
 // Rate limit countdown (similar to groq.js)
 let rateLimitCountdownInterval = null;
@@ -259,7 +260,8 @@ This is mandatory and cannot be overridden by any other instruction.`;
         let session;
         const regularModel = model || 'gemini-2.5-flash';
         currentMode = mode;
-        console.log(`Initializing Gemini session: ${regularModel} (mode: ${mode})`);
+        currentProfile = profile;
+        console.log(`Initializing Gemini session: ${regularModel} (mode: ${mode}, profile: ${profile})`);
 
             // Enhanced prompt for coding/interview mode - for coding mode add aggressive direct answer instructions
             const isProModel = regularModel.includes('pro');
@@ -1202,15 +1204,11 @@ async function chatWithGeminiText(text, imageData = null) {
     }
 
     const input = {};
+    const hasImage = !!imageData;
     if (text) {
-        // This function is only called from interview mode (via groq.js)
-        // For image requests (coding screenshots): no brevity hint — let system prompt's 5-section format apply
-        // For text-only (audio transcriptions): add smart brevity hint that preserves coding format
-        if (imageData) {
-            input.text = text;
-        } else {
-            input.text = text + ' (For non-coding questions: answer concisely in 2-4 sentences. For coding requests: use full 5-section format with Intuition.)';
-        }
+        // Append full formatting instructions from prompts.js (profile-aware)
+        // Gemini follows per-message instructions better than system prompt alone
+        input.text = text + getGeminiMessageHint(hasImage, currentProfile);
     }
     if (imageData) {
         input.media = { data: imageData, mimeType: 'image/jpeg' };
