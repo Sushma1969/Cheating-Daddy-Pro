@@ -1504,7 +1504,8 @@ export class CustomizeView extends LitElement {
 
 
 
-                <!-- Google Search Section -->
+                <!-- Google Search Section (only shown in exam/coding mode — interview mode disables search for low latency) -->
+                ${this.selectedMode === 'coding' ? html`
                 <div class="settings-section">
                     <div class="section-title">
                         <span>Google Search</span>
@@ -1527,6 +1528,7 @@ export class CustomizeView extends LitElement {
                         </div>
                     </div>
                 </div>
+                ` : ''}
 
                 <div class="settings-note">
                     💡 Settings are automatically saved as you change them. Changes will take effect immediately or on the next session start.
