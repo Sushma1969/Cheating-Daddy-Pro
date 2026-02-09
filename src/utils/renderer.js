@@ -188,7 +188,7 @@ async function initializeGemini(profile = 'interview', language = 'en-US', mode 
         }
 
         // If Gemini model, also initialize Gemini for text generation + screenshots
-        if (selectedModel === 'gemini-3-flash-preview') {
+        if (selectedModel === 'gemini-2.5-flash-lite') {
             const apiKey = localStorage.getItem('apiKey')?.trim();
             if (apiKey) {
                 const success = await ipcRenderer.invoke('initialize-gemini', apiKey, localStorage.getItem('customPrompt') || '', profile, language, selectedMode, selectedModel);
@@ -714,7 +714,7 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
                 }
 
                 // All interview mode manual screenshots go through Groq handler
-                // (groq.js internally routes to Gemini for gemini-3-flash-preview)
+                // (groq.js internally routes to Gemini for gemini-2.5-flash-lite)
                 const selectedMode = localStorage.getItem('selectedMode') || 'interview';
                 const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
                 const selectedProfile = localStorage.getItem('selectedProfile') || 'interview';
@@ -907,7 +907,7 @@ async function sendTextMessage(text) {
         });
 
         // All interview mode screenshots go through Groq handler
-        // (groq.js internally routes to Gemini for gemini-3-flash-preview)
+        // (groq.js internally routes to Gemini for gemini-2.5-flash-lite)
         const selectedMode = localStorage.getItem('selectedMode') || 'interview';
         const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
         const useGroq = selectedMode === 'interview';

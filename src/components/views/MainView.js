@@ -279,11 +279,11 @@ export class MainView extends LitElement {
         return this.selectedModel && (this.selectedModel.includes('llama') || this.selectedModel.includes('groq'));
     }
 
-    // Helper: gemini-3-flash-preview in interview mode needs BOTH Gemini + Groq keys
+    // Helper: gemini-2.5-flash-lite in interview mode needs BOTH Gemini + Groq keys
     // In exam mode, only Gemini key is needed (no Whisper STT)
     needsBothKeys() {
         const profile = localStorage.getItem('selectedProfile') || 'exam';
-        return this.selectedModel === 'gemini-3-flash-preview' && profile !== 'exam';
+        return this.selectedModel === 'gemini-2.5-flash-lite' && profile !== 'exam';
     }
 
     connectedCallback() {

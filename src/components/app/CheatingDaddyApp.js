@@ -291,7 +291,7 @@ export class CheatingDaddyApp extends LitElement {
     async handleStart() {
         const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
         const isGroqModel = selectedModel && (selectedModel.includes('llama') || selectedModel.includes('groq'));
-        const needsBothKeys = selectedModel === 'gemini-3-flash-preview' && this.selectedProfile !== 'exam';
+        const needsBothKeys = selectedModel === 'gemini-2.5-flash-lite' && this.selectedProfile !== 'exam';
         const mainView = this.shadowRoot.querySelector('main-view');
 
         // Validate the right API key(s) based on model
@@ -361,7 +361,7 @@ export class CheatingDaddyApp extends LitElement {
             const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
             const isGroqModel = selectedModel && (selectedModel.includes('llama') || selectedModel.includes('groq'));
 
-            if (selectedModel === 'gemini-3-flash-preview' && this.selectedProfile !== 'exam') {
+            if (selectedModel === 'gemini-2.5-flash-lite' && this.selectedProfile !== 'exam') {
                 // Dual key mode (interview): open both API key pages
                 await ipcRenderer.invoke('open-external', 'https://aistudio.google.com/');
                 await ipcRenderer.invoke('open-external', 'https://groq.com/');

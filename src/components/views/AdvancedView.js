@@ -487,6 +487,7 @@ export class AdvancedView extends LitElement {
     static MODEL_MAX_TOKENS = {
         // Gemini models
         'gemini-2.5-flash': 65536,
+        'gemini-2.5-flash-lite': 65536,
         'gemini-3-flash-preview': 65536,
         'gemini-3-pro-preview': 65536,
         // Groq Llama models
@@ -504,8 +505,8 @@ export class AdvancedView extends LitElement {
             topP: 0.95,
             maxOutputTokens: 8192,
         },
-        // Gemini 3 Flash - Interview mode (concise, fast responses for spoken Q&A)
-        'gemini-3-flash-preview_interview': {
+        // Gemini 2.5 Flash Lite - Interview mode (fastest, no thinking by default)
+        'gemini-2.5-flash-lite_interview': {
             temperature: 0.7,
             topP: 0.9,
             maxOutputTokens: 1024,
@@ -600,6 +601,7 @@ export class AdvancedView extends LitElement {
     getModelDisplayName() {
         const modelNames = {
             'gemini-2.5-flash': 'Gemini 2.5 Flash',
+            'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
             'gemini-3-flash-preview': 'Gemini 3.0 Flash',
             'gemini-3-pro-preview': 'Gemini 3.0 Pro',
             'llama-4-maverick': 'Llama 4 Maverick',

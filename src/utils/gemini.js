@@ -109,6 +109,7 @@ let generationSettings = {
 const MODEL_MAX_OUTPUT_TOKENS = {
     // Gemini models
     'gemini-2.5-flash': 65536,
+    'gemini-2.5-flash-lite': 65536,
     'gemini-3-flash-preview': 65536,
     'gemini-3-pro-preview': 65536,
     // Groq Llama models
@@ -468,23 +469,18 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                                 }
                             }
 
-                            // Thinking levels:
-                            // Gemini 3 Flash interview mode → 'minimal' (fastest responses)
-                            // Gemini 3 Flash exam mode → 'low'
+                            // Thinking levels (exam/coding mode only):
+                            // Gemini 3 Flash → 'low' (fast but accurate)
                             // Gemini 3 Pro → 'high' (best accuracy)
+                            // Gemini 2.5 Flash Lite → no thinking (off by default)
                             const thinkingConfig = this.model === 'gemini-3-flash-preview'
-                                ? { thinkingLevel: currentMode === 'interview' ? 'minimal' : 'low' }
+                                ? { thinkingLevel: 'low' }
                                 : this.model === 'gemini-3-pro-preview'
                                     ? { thinkingLevel: 'high' }
                                     : undefined;
 
-                            // Interview mode: skip Google Search tool entirely (saves 2-5s latency per request)
-                            // - Text Q&A ("what is polymorphism?") doesn't need web search
-                            // - Coding screenshots (LeetCode) don't need web search
-                            // Exam/coding mode: keep Search enabled (may need current info for complex problems)
-                            const requestTools = (currentMode === 'interview')
-                                ? undefined
-                                : (this.tools.length > 0 ? this.tools : undefined);
+                            // Pass Google Search tool if enabled in settings
+                            const requestTools = this.tools.length > 0 ? this.tools : undefined;
 
                             // Log request details for latency debugging
                             const imageSize = hasImage ? Math.round(input.media.data.length / 1024) : 0;
@@ -1207,7 +1203,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
 
 /**
  * Chat with Gemini using text (and optional image).
- * Used by groq.js when interview model is gemini-3-flash-preview:
+ * Used by groq.js when interview model is gemini-2.5-flash-lite:
  *   Groq Whisper (STT) → transcription → chatWithGeminiText() → Gemini response
  *
  * @param {string} text - The transcription or prompt text

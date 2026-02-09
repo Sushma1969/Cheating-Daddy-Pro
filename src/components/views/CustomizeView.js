@@ -635,7 +635,7 @@ export class CustomizeView extends LitElement {
             localStorage.setItem('selectedMode', 'interview');
 
             // Validate model for interview mode
-            const validInterviewModels = ['gemini-3-flash-preview', 'llama-4-maverick', 'llama-4-scout'];
+            const validInterviewModels = ['gemini-2.5-flash-lite', 'llama-4-maverick', 'llama-4-scout'];
             if (!validInterviewModels.includes(this.selectedModel)) {
                 this.selectedModel = 'llama-4-maverick';
             }
@@ -1094,7 +1094,7 @@ export class CustomizeView extends LitElement {
         // In coding mode, user can choose between flash and pro
         if (this.selectedMode === 'interview') {
             // Keep current model if it's valid for interview mode, otherwise default
-            const validInterviewModels = ['gemini-3-flash-preview', 'llama-4-maverick', 'llama-4-scout'];
+            const validInterviewModels = ['gemini-2.5-flash-lite', 'llama-4-maverick', 'llama-4-scout'];
             if (!validInterviewModels.includes(this.selectedModel)) {
                 this.selectedModel = 'llama-4-maverick';
             }
@@ -1228,13 +1228,13 @@ export class CustomizeView extends LitElement {
                                     <custom-dropdown
                                         .value=${this.selectedModel}
                                         .options=${[
-                                            { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
+                                            { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
                                             { value: 'llama-4-maverick', label: 'Llama 4 Maverick 17B', icon: './assets/models/metalogo.dcf881ba.svg' },
                                             { value: 'llama-4-scout', label: 'Llama 4 Scout 17B', icon: './assets/models/metalogo.dcf881ba.svg' }
                                         ]}
                                         @change=${e => this.handleModelChange({ target: { value: e.detail.value } })}
                                     ></custom-dropdown>
-                                    <div class="form-description">${this.selectedModel === 'gemini-3-flash-preview' ? 'Groq Whisper STT + Gemini 3 Flash for accurate interview responses. Requires both Groq and Gemini API keys.' : this.selectedModel === 'llama-4-maverick' ? 'Groq Whisper STT + Llama 4 Maverick for fast interview responses. Requires Groq API key.' : 'Groq Whisper STT + Llama 4 Scout for efficient interview responses. Requires Groq API key.'}</div>
+                                    <div class="form-description">${this.selectedModel === 'gemini-2.5-flash-lite' ? 'Groq Whisper STT + Gemini 2.5 Flash Lite for fast responses. Requires both Groq and Gemini API keys.' : this.selectedModel === 'llama-4-maverick' ? 'Groq Whisper STT + Llama 4 Maverick for fast interview responses. Requires Groq API key.' : 'Groq Whisper STT + Llama 4 Scout for efficient interview responses. Requires Groq API key.'}</div>
                                 </div>
                             </div>
                         `}
@@ -1443,9 +1443,9 @@ export class CustomizeView extends LitElement {
                                 <div class="form-description">
                                     ${
                                         this.selectedImageQuality === 'high'
-                                            ? 'Best quality, uses more tokens'
+                                            ? 'High quality, uses more tokens'
                                             : this.selectedImageQuality === 'medium'
-                                              ? 'Balanced quality and token usage'
+                                              ? 'BMedium quality uses balanced tokens'
                                               : 'Lower quality, uses fewer tokens'
                                     }
                                 </div>
@@ -1504,8 +1504,7 @@ export class CustomizeView extends LitElement {
 
 
 
-                <!-- Google Search Section (only shown in exam/coding mode — interview mode disables search for low latency) -->
-                ${this.selectedMode === 'coding' ? html`
+                <!-- Google Search Section -->
                 <div class="settings-section">
                     <div class="section-title">
                         <span>Google Search</span>
@@ -1528,7 +1527,6 @@ export class CustomizeView extends LitElement {
                         </div>
                     </div>
                 </div>
-                ` : ''}
 
                 <div class="settings-note">
                     💡 Settings are automatically saved as you change them. Changes will take effect immediately or on the next session start.

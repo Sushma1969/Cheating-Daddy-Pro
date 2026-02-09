@@ -265,6 +265,7 @@ export class AppHeader extends LitElement {
         // Format model names for display
         const modelMap = {
             'gemini-2.5-flash': '2.5 Flash',
+            'gemini-2.5-flash-lite': '2.5 Flash Lite',
             'gemini-3-flash-preview': '3.0 Flash',
             'gemini-3-pro-preview': '3.0 Pro Preview',
             'llama-4-maverick': 'Llama 4 Maverick',

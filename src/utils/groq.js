@@ -692,7 +692,7 @@ async function processAudioBuffer(model = null) {
 
         // Step 2: Send transcription to chat model for response
         let response;
-        if (chatModel === 'gemini-3-flash-preview') {
+        if (chatModel === 'gemini-2.5-flash-lite') {
             response = await chatWithGeminiText(transcription);
         } else {
             response = await chatWithLlama(transcription, chatModel);
@@ -770,7 +770,7 @@ async function flushAudioBuffer(model = null) {
 
         // Send transcription to chat model for response
         let response;
-        if (chatModel === 'gemini-3-flash-preview') {
+        if (chatModel === 'gemini-2.5-flash-lite') {
             response = await chatWithGeminiText(transcription);
         } else {
             response = await chatWithLlama(transcription, chatModel);
@@ -814,7 +814,7 @@ async function analyzeWithLlama(text, imageData, model = 'llama-4-maverick') {
         }
 
         let response;
-        if (model === 'gemini-3-flash-preview') {
+        if (model === 'gemini-2.5-flash-lite') {
             // Route to Gemini for screenshot analysis
             response = await chatWithGeminiText(finalText, imageData);
         } else {
