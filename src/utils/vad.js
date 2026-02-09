@@ -95,9 +95,9 @@ class VADProcessor {
     }
 
     async processAudio(audioFrame) {
-        // Debug: Log first few frames to track state
-        if (this.frameCount < 5) {
-            console.log(`🎵 [PROCESS AUDIO] Frame ${this.frameCount}: mode="${this.mode}", state="${this.state}"`);
+        // First frame only — confirm VAD is processing
+        if (this.frameCount === 0) {
+            console.log(`[VAD] Processing started: mode="${this.mode}", state="${this.state}"`);
         }
 
         // Don't process audio if VAD is not initialized, idle, or manually paused

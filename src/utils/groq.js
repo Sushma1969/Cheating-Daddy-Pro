@@ -304,11 +304,7 @@ async function transcribeWithGroq(wavBuffer) {
                     try {
                         const response = JSON.parse(data);
                         const transcription = response.text || '';
-                        console.log('\n========================================');
-                        console.log('[GROQ WHISPER] TRANSCRIPTION RESULT:');
-                        console.log('----------------------------------------');
-                        console.log(transcription);
-                        console.log('========================================\n');
+                        console.log(`[GROQ WHISPER] Transcription: ${transcription.length} chars`);
                         resolve(transcription);
                     } catch (e) {
                         console.error('[GROQ] Failed to parse response:', e);
@@ -483,11 +479,7 @@ async function chatWithLlama(userMessage, model = 'llama-4-maverick', imageData 
 
             res.on('end', () => {
                 if (res.statusCode === 200 && responseText) {
-                    console.log('\n========================================');
-                    console.log('[GROQ LLAMA] RESPONSE:');
-                    console.log('----------------------------------------');
-                    console.log(responseText.substring(0, 200) + '...');
-                    console.log('========================================\n');
+                    console.log(`[GROQ LLAMA] Response: ${responseText.length} chars`);
 
                     // Save to conversation history
                     conversationHistory.push({

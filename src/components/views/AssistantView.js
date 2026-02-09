@@ -1127,11 +1127,9 @@ export class AssistantView extends LitElement {
     }
 
     updateResponseContent() {
-        console.log('updateResponseContent called');
         const container = this.shadowRoot.querySelector('#responseContainer');
         if (container) {
             const currentResponse = this.getCurrentResponse();
-            console.log('Current response length:', currentResponse.length);
 
             // Skip animation entirely - just render the final markdown
             // This prevents markdown breaking and re-streaming issues

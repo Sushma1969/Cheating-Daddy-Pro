@@ -221,18 +221,12 @@ async function initializeGemini(profile = 'interview', language = 'en-US', mode 
 
 // Listen for status updates
 ipcRenderer.on('update-status', (event, status) => {
-    console.log('Status update:', status);
     cheddar.setStatus(status);
 });
 
 // Listen for Groq transcription results
 ipcRenderer.on('groq-transcription', (event, transcription) => {
-    console.log('\n========================================');
-    console.log('[GROQ STT] RECEIVED TRANSCRIPTION:');
-    console.log('----------------------------------------');
-    console.log(transcription);
-    console.log('========================================\n');
-    // The response will be sent via update-response after Llama processes it
+    console.log(`[GROQ STT] Transcription: ${transcription.length} chars`);
 });
 
 // Listen for responses - REMOVED: This is handled in CheatingDaddyApp.js to avoid duplicates
@@ -290,8 +284,8 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
             mediaStream = await navigator.mediaDevices.getDisplayMedia({
                 video: {
                     frameRate: 1,
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
                 },
                 audio: false, // Don't use browser audio on macOS
             });
@@ -433,7 +427,7 @@ function setupLinuxSystemAudioProcessing() {
                             if (useGroqForSTT) {
                                 // Send to Groq for Whisper transcription
                                 await ipcRenderer.invoke('groq-add-audio', { data: base64Data });
-                                console.log('[GROQ] VAD segment added, duration:', metadata?.duration || 'unknown');
+                                // VAD segment sent to Groq
                             } else {
                                 // Coding/exam mode: send audio to Gemini
                                 await ipcRenderer.invoke('send-audio-content', {
@@ -550,7 +544,7 @@ function setupWindowsLoopbackProcessing() {
                             if (useGroqForSTT) {
                                 // Send to Groq for Whisper transcription
                                 await ipcRenderer.invoke('groq-add-audio', { data: base64Data });
-                                console.log('[GROQ] VAD segment added, duration:', metadata?.duration || 'unknown');
+                                // VAD segment sent to Groq
                             } else {
                                 // Coding/exam mode: send audio to Gemini
                                 await ipcRenderer.invoke('send-audio-content', {
@@ -685,19 +679,21 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
         console.warn('Screenshot appears to be blank/black');
     }
 
+    // Lower quality values reduce base64 payload for faster API processing
+    // Code text and screenshots remain readable at these levels
     let qualityValue;
     switch (imageQuality) {
         case 'high':
-            qualityValue = 0.9;
-            break;
-        case 'medium':
-            qualityValue = 0.7;
-            break;
-        case 'low':
             qualityValue = 0.5;
             break;
+        case 'medium':
+            qualityValue = 0.4;
+            break;
+        case 'low':
+            qualityValue = 0.3;
+            break;
         default:
-            qualityValue = 0.7; // Default to medium
+            qualityValue = 0.5; // Default to high
     }
 
     offscreenCanvas.toBlob(
@@ -755,7 +751,7 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
                     // Track image tokens after successful send
                     const imageTokens = tokenTracker.calculateImageTokens(offscreenCanvas.width, offscreenCanvas.height);
                     tokenTracker.addTokens(imageTokens, 'image');
-                    console.log(`📊 Image sent successfully - ${imageTokens} tokens used (${offscreenCanvas.width}x${offscreenCanvas.height})`);
+                    console.log(`📊 Image sent: ${offscreenCanvas.width}x${offscreenCanvas.height}, ${Math.round(base64data.length / 1024)}KB base64, ${imageTokens} tokens`);
                 } else {
                     console.error('Failed to send image:', result.error);
                 }
@@ -877,20 +873,20 @@ async function sendTextMessage(text) {
 
         offscreenContext.drawImage(hiddenVideo, 0, 0, offscreenCanvas.width, offscreenCanvas.height);
 
-        // Get quality setting
+        // Get quality setting (lower values reduce payload for faster API processing)
         let qualityValue;
         switch (currentImageQuality) {
             case 'high':
-                qualityValue = 0.9;
-                break;
-            case 'medium':
-                qualityValue = 0.7;
-                break;
-            case 'low':
                 qualityValue = 0.5;
                 break;
+            case 'medium':
+                qualityValue = 0.4;
+                break;
+            case 'low':
+                qualityValue = 0.3;
+                break;
             default:
-                qualityValue = 0.7;
+                qualityValue = 0.4;
         }
 
         // Convert canvas to base64

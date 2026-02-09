@@ -194,7 +194,7 @@ export class CheatingDaddyApp extends LitElement {
         if (text.includes('Ready') || text.includes('Listening') || text.includes('Error') ||
             text.includes('Quota') || text.includes('Session closed')) {
             this._currentResponseIsComplete = true;
-            console.log('[setStatus] Marked current response as complete');
+            // Response marked complete
         }
     }
 
@@ -214,18 +214,15 @@ export class CheatingDaddyApp extends LitElement {
             this.currentResponseIndex = this.responses.length - 1;
             this._awaitingNewResponse = false;
             this._currentResponseIsComplete = false;
-            console.log('[setResponse] Pushed new response:', response);
         } else if (!this._currentResponseIsComplete && !isFillerResponse && this.responses.length > 0) {
             // For substantial responses, update the last one (streaming behavior)
             // Only update if the current response is not marked as complete
             this.responses = [...this.responses.slice(0, this.responses.length - 1), response];
-            console.log('[setResponse] Updated last response:', response);
         } else {
             // For filler responses or when current response is complete, add as new
             this.responses = [...this.responses, response];
             this.currentResponseIndex = this.responses.length - 1;
             this._currentResponseIsComplete = false;
-            console.log('[setResponse] Added response as new:', response);
         }
         this.shouldAnimateResponse = true;
         this.requestUpdate();
@@ -570,7 +567,7 @@ export class CheatingDaddyApp extends LitElement {
                         @response-animation-complete=${() => {
                             this.shouldAnimateResponse = false;
                             this._currentResponseIsComplete = true;
-                            console.log('[response-animation-complete] Marked current response as complete');
+                            // Response animation complete
                             this.requestUpdate();
                         }}
                     ></assistant-view>

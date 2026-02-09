@@ -424,11 +424,12 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
 
                             const hasImage = !!input.media;
 
-                            // Build conversation with history
-                            // For text-only requests: strip ALL images from history to reduce payload
-                            // (images are 200KB+ base64 each — re-sending them adds seconds of latency)
+                            // Strip old images from conversation history to reduce payload & processing time
+                            // Interview mode: ALWAYS strip (each screenshot is independent, saves ~5-10s processing)
+                            // Coding/exam mode: strip only for text-only requests (images may be needed for follow-ups)
+                            const shouldStripImages = currentMode === 'interview' || !hasImage;
                             let historyForRequest;
-                            if (!hasImage && this.conversationHistory.some(e => e.role === 'user' && e.parts?.some(p => p.inlineData))) {
+                            if (shouldStripImages && this.conversationHistory.some(e => e.role === 'user' && e.parts?.some(p => p.inlineData))) {
                                 historyForRequest = this.conversationHistory.map(entry => {
                                     if (entry.role === 'user' && entry.parts && entry.parts.some(p => p.inlineData)) {
                                         return {
@@ -484,6 +485,10 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                             const requestTools = (currentMode === 'interview')
                                 ? undefined
                                 : (this.tools.length > 0 ? this.tools : undefined);
+
+                            // Log request details for latency debugging
+                            const imageSize = hasImage ? Math.round(input.media.data.length / 1024) : 0;
+                            console.log(`📤 Request: ${hasImage ? `image ${imageSize}KB` : 'text'}, tokens: ${effectiveMaxTokens}, thinking: ${thinkingConfig?.thinkingLevel || 'default'}, tools: ${requestTools ? 'enabled' : 'disabled'}`);
 
                             const streamResult = await this.client.models.generateContentStream({
                                 model: this.model,
