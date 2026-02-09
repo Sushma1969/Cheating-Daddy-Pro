@@ -345,10 +345,30 @@ CRITICAL FINAL REMINDER:
 NOW SOLVE THE CODING PROBLEM SHOWN IN THE SCREENSHOT.
 RESPONSE FORMAT: [approach sentence] + [code] + [complexity]`;
 
+            // Add conciseness override for interview mode (Gemini tends to be very verbose)
+            const interviewPrompt = systemPrompt + `
+
+============ CRITICAL INTERVIEW BREVITY RULES ============
+
+You are helping someone in a LIVE SPOKEN interview. They will READ your answer aloud.
+Long responses are HARMFUL — the interviewer will notice they are reading, not speaking.
+
+RULES:
+1. NON-CODING questions: MAX 2-4 sentences. Give the direct answer, one brief reason, done.
+2. Formula questions: State the formula, define variables in ONE line each. NO derivations, NO proofs, NO examples, NO step-by-step walkthroughs.
+3. Concept questions: Define it in 1-2 sentences. Give 1 example ONLY if asked. NO listing every variant or type.
+4. NEVER use tables, numbered lists longer than 3 items, or multi-section responses for spoken answers.
+5. CODING questions from screenshots: Follow the structured format (Approach + Code + Complexity).
+
+BAD (too long): "Linear Regression uses the formula y = β0 + β1*x where... [followed by OLS derivation, error terms, 5 examples]"
+GOOD (interview-ready): "The formula is **ŷ = β₀ + β₁x**, where β₀ is the intercept and β₁ is the slope representing the change in y per unit x."
+
+REMEMBER: If someone asked you this face-to-face, you would NOT recite a textbook chapter. Keep it natural and brief.`;
+
             // Create a "session" object that uses generateContentStream internally
             // For coding/exam mode: use codingPrompt with aggressive direct answer instructions
-            // For interview mode: use base systemPrompt (interview profile handles the rest)
-            const sessionPrompt = (mode === 'coding') ? codingPrompt : systemPrompt;
+            // For interview mode: use interviewPrompt with brevity override
+            const sessionPrompt = (mode === 'coding') ? codingPrompt : interviewPrompt;
 
             session = {
                 model: regularModel,
@@ -425,7 +445,13 @@ RESPONSE FORMAT: [approach sentence] + [code] + [complexity]`;
                             }
 
                             const modelMaxTokens = getMaxOutputTokensForModel(this.model);
-                            const effectiveMaxTokens = Math.min(generationSettings.maxOutputTokens, modelMaxTokens);
+                            let effectiveMaxTokens = Math.min(generationSettings.maxOutputTokens, modelMaxTokens);
+
+                            // Interview mode: hard cap for concise spoken-style answers
+                            // Exam/coding mode needs full output for detailed code solutions
+                            if (currentMode === 'interview') {
+                                effectiveMaxTokens = Math.min(effectiveMaxTokens, 1024);
+                            }
 
                             // Thinking levels:
                             // Gemini 3 Flash interview mode → 'minimal' (fastest responses)
@@ -1163,7 +1189,11 @@ async function chatWithGeminiText(text, imageData = null) {
     }
 
     const input = {};
-    if (text) input.text = text;
+    if (text) {
+        // Append brevity hint — this function is only called from interview mode (via groq.js)
+        // Gemini ignores system prompt brevity rules unless reinforced in the user message
+        input.text = text + ' (Answer concisely in 2-4 sentences. No long explanations.)';
+    }
     if (imageData) {
         input.media = { data: imageData, mimeType: 'image/jpeg' };
     }

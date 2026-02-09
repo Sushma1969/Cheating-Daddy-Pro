@@ -495,35 +495,41 @@ export class AdvancedView extends LitElement {
     };
 
     // Model-specific default settings based on 2025/2026 documentation
-    // Interview models: balanced responses (enough tokens for technical explanations + code)
-    // Coding models: detailed responses (higher tokens, lower temp for accuracy)
+    // Keys use "model_mode" format for models that work in multiple modes
+    // Interview: concise answers, lower tokens | Exam/Coding: detailed code, higher tokens
     static MODEL_DEFAULTS = {
-        // Gemini 2.5 Flash - Coding mode (detailed code, more deterministic)
-        'gemini-2.5-flash': {
+        // Gemini 2.5 Flash - Exam/Coding mode only
+        'gemini-2.5-flash_coding': {
             temperature: 0.5,
             topP: 0.95,
             maxOutputTokens: 8192,
         },
-        // Gemini 3 Flash - Coding mode (fast, low thinking for speed)
-        'gemini-3-flash-preview': {
+        // Gemini 3 Flash - Interview mode (concise, fast responses for spoken Q&A)
+        'gemini-3-flash-preview_interview': {
+            temperature: 0.7,
+            topP: 0.9,
+            maxOutputTokens: 1024,
+        },
+        // Gemini 3 Flash - Exam/Coding mode (detailed code solutions)
+        'gemini-3-flash-preview_coding': {
             temperature: 1.0,
             topP: 0.95,
             maxOutputTokens: 8192,
         },
-        // Gemini 3 Pro - Coding mode (very detailed, most accurate)
-        'gemini-3-pro-preview': {
+        // Gemini 3 Pro - Exam/Coding mode (very detailed, most accurate)
+        'gemini-3-pro-preview_coding': {
             temperature: 0.4,
             topP: 0.95,
             maxOutputTokens: 16384,
         },
         // Groq Llama 4 Maverick - Interview mode (balanced, enough for code + explanation)
-        'llama-4-maverick': {
+        'llama-4-maverick_interview': {
             temperature: 0.7,
             topP: 0.95,
             maxOutputTokens: 4096,
         },
         // Groq Llama 4 Scout - Interview mode (balanced, enough for code + explanation)
-        'llama-4-scout': {
+        'llama-4-scout_interview': {
             temperature: 0.7,
             topP: 0.95,
             maxOutputTokens: 4096,
@@ -554,21 +560,33 @@ export class AdvancedView extends LitElement {
         this.loadModelSettings();
     }
 
-    // Get default max tokens based on selected model
+    // Get current mode from localStorage
+    getCurrentMode() {
+        return localStorage.getItem('selectedMode') || 'interview';
+    }
+
+    // Get defaults for current model + mode combination
+    getModelModeDefaults() {
+        const mode = this.getCurrentMode();
+        // Try model_mode key first, then model-only fallback
+        return AdvancedView.MODEL_DEFAULTS[`${this.selectedModel}_${mode}`] || null;
+    }
+
+    // Get default max tokens based on selected model + mode
     getDefaultMaxTokens() {
-        const defaults = AdvancedView.MODEL_DEFAULTS[this.selectedModel];
+        const defaults = this.getModelModeDefaults();
         return defaults ? defaults.maxOutputTokens : AdvancedView.DEFAULT_MAX_TOKENS;
     }
 
-    // Get default temperature based on selected model
+    // Get default temperature based on selected model + mode
     getDefaultTemperature() {
-        const defaults = AdvancedView.MODEL_DEFAULTS[this.selectedModel];
+        const defaults = this.getModelModeDefaults();
         return defaults ? defaults.temperature : AdvancedView.DEFAULT_TEMPERATURE;
     }
 
-    // Get default topP based on selected model
+    // Get default topP based on selected model + mode
     getDefaultTopP() {
-        const defaults = AdvancedView.MODEL_DEFAULTS[this.selectedModel];
+        const defaults = this.getModelModeDefaults();
         return defaults ? defaults.topP : AdvancedView.DEFAULT_TOP_P;
     }
 
@@ -577,15 +595,6 @@ export class AdvancedView extends LitElement {
         return AdvancedView.MODEL_MAX_TOKENS[this.selectedModel] || 65536;
     }
 
-    // Get default temperature (same for all models)
-    getDefaultTemperature() {
-        return AdvancedView.DEFAULT_TEMPERATURE;
-    }
-
-    // Get default top_p (same for all models)
-    getDefaultTopP() {
-        return AdvancedView.DEFAULT_TOP_P;
-    }
 
     // Get display name for the current model
     getModelDisplayName() {
@@ -599,9 +608,9 @@ export class AdvancedView extends LitElement {
         return modelNames[this.selectedModel] || this.selectedModel;
     }
 
-    // Check if model should have orange badge (exam mode models)
+    // Check if currently in exam/coding mode (for badge color)
     isExamModeModel() {
-        return this.selectedModel === 'gemini-2.5-flash' || this.selectedModel === 'gemini-3-flash-preview' || this.selectedModel === 'gemini-3-pro-preview';
+        return this.getCurrentMode() === 'coding';
     }
 
     // Check if current model is a Groq Llama model
@@ -756,9 +765,10 @@ export class AdvancedView extends LitElement {
     }
 
     // Model generation settings methods
-    // Settings are now stored PER MODEL to preserve custom values when switching
+    // Settings are stored PER MODEL + MODE to preserve custom values for each combination
     getStorageKey(setting) {
-        return `modelSettings_${this.selectedModel}_${setting}`;
+        const mode = this.getCurrentMode();
+        return `modelSettings_${this.selectedModel}_${mode}_${setting}`;
     }
 
     loadModelSettings() {

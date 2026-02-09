@@ -175,7 +175,7 @@ async function initializeGemini(profile = 'interview', language = 'en-US', mode 
         // ALL interview models use Groq Whisper for STT
         const groqApiKey = localStorage.getItem('groqApiKey')?.trim();
         if (groqApiKey) {
-            const result = await ipcRenderer.invoke('initialize-groq', groqApiKey, localStorage.getItem('customPrompt') || '', profile, language);
+            const result = await ipcRenderer.invoke('initialize-groq', groqApiKey, localStorage.getItem('customPrompt') || '', profile, language, selectedModel);
             if (result.success) {
                 console.log('[RENDERER] Groq initialized for interview model:', selectedModel);
             } else {
@@ -721,14 +721,26 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
                 // (groq.js internally routes to Gemini for gemini-3-flash-preview)
                 const selectedMode = localStorage.getItem('selectedMode') || 'interview';
                 const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
+                const selectedProfile = localStorage.getItem('selectedProfile') || 'interview';
                 const useGroq = selectedMode === 'interview' && captureIsManual;
+
+                // Profile-aware screenshot prompt — tells the model what context to analyze in
+                const screenshotPrompts = {
+                    interview: 'Analyze this screenshot. If there is a coding problem, provide the solution. If there are interview questions, answer them concisely.',
+                    sales: 'Analyze this screenshot. Help with the sales situation shown — provide talking points, objection handling, or product positioning as needed.',
+                    meeting: 'Analyze this screenshot. Summarize key points, suggest responses, or help with any questions/agenda items shown.',
+                    presentation: 'Analyze this screenshot. Help improve or respond to what is shown — suggest talking points or answer any questions visible.',
+                    negotiation: 'Analyze this screenshot. Help with the negotiation — suggest counter-offers, strategies, or responses to what is shown.',
+                    exam: 'Analyze this screenshot and solve any problems or questions shown. Provide complete answers.',
+                };
+                const screenshotText = screenshotPrompts[selectedProfile] || screenshotPrompts.interview;
 
                 let result;
                 if (useGroq) {
-                    // Send to Groq for analysis
-                    console.log('[GROQ] Sending manual screenshot for analysis...');
+                    // Send to Groq/Gemini for analysis
+                    console.log(`[SCREENSHOT] Sending manual screenshot (profile: ${selectedProfile}, model: ${selectedModel})`);
                     result = await ipcRenderer.invoke('groq-analyze-image', {
-                        text: 'Please analyze this screenshot and provide helpful insights about what you see. If there are any questions visible, help answer them.',
+                        text: screenshotText,
                         imageData: base64data,
                         model: selectedModel
                     });

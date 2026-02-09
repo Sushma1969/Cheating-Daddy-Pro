@@ -165,9 +165,11 @@ function calculateRMS(pcmBuffer) {
 /**
  * Initialize Groq API with the provided API key
  */
-function initializeGroq(apiKey, customPrompt = '', profile = 'interview', language = 'en-US') {
+function initializeGroq(apiKey, customPrompt = '', profile = 'interview', language = 'en-US', model = 'llama-4-maverick') {
     groqApiKey = apiKey;
     conversationHistory = [];
+    selectedLlamaModel = model;
+    console.log(`[GROQ] Chat model set to: ${selectedLlamaModel}`);
 
     // Clear any active rate limit countdown from previous session
     if (rateLimitCountdownInterval) {
@@ -902,9 +904,9 @@ function updateGenerationSettings(settings) {
  * Setup IPC handlers for Groq
  */
 function setupGroqIpcHandlers() {
-    ipcMain.handle('initialize-groq', async (event, apiKey, customPrompt = '', profile = 'interview', language = 'en-US') => {
+    ipcMain.handle('initialize-groq', async (event, apiKey, customPrompt = '', profile = 'interview', language = 'en-US', model = 'llama-4-maverick') => {
         try {
-            initializeGroq(apiKey, customPrompt, profile, language);
+            initializeGroq(apiKey, customPrompt, profile, language, model);
             return { success: true };
         } catch (error) {
             console.error('[GROQ] Initialization error:', error);
