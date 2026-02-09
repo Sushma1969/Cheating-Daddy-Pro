@@ -1093,6 +1093,21 @@ export class CustomizeView extends LitElement {
 
         this.selectedMode = selectedMode || 'interview';
         this.selectedModel = selectedModel || 'llama-4-maverick';
+
+        // Validate stored model is valid for the current mode
+        if (this.selectedMode === 'interview') {
+            const validInterviewModels = ['gemini-2.5-flash-lite', 'llama-4-maverick', 'llama-4-scout'];
+            if (!validInterviewModels.includes(this.selectedModel)) {
+                this.selectedModel = 'llama-4-maverick';
+                localStorage.setItem('selectedModel', this.selectedModel);
+            }
+        } else {
+            const validCodingModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3-pro-preview'];
+            if (!validCodingModels.includes(this.selectedModel)) {
+                this.selectedModel = 'gemini-2.5-flash';
+                localStorage.setItem('selectedModel', this.selectedModel);
+            }
+        }
     }
 
     // Helper to check if selected model is a Groq/Llama model
