@@ -1006,11 +1006,15 @@ function getGeminiMessageHint(hasImage, profile = 'interview') {
     // Interview profile — has coding questions + non-coding Q&A
     if (profile === 'interview') {
         if (hasImage) {
-            // Screenshot coding problems — full 5-section structured format
+            // Screenshot — detect type first, then respond accordingly
             return `
 
 [INSTRUCTIONS — Follow these EXACTLY:]
-- IMMEDIATELY provide a COMPLETE CODE SOLUTION — do NOT describe the UI or screenshot
+
+FIRST: Detect what the screenshot contains, then respond accordingly:
+
+=== IF CODING PROBLEM (LeetCode, HackerRank, code editor with a problem) ===
+- IMMEDIATELY provide a COMPLETE CODE SOLUTION — do NOT describe the UI
 - PRESERVE THE EXACT FUNCTION SIGNATURE from the screenshot (class name, method name, parameters, return type)
 - NEVER change parameter names, types, or count — use the EXACT signature shown
 - DETECT the programming language from the code editor
@@ -1026,7 +1030,17 @@ MANDATORY 5-SECTION FORMAT:
 4. **Complexity Analysis** — Time complexity: O(...) with brief explanation. Space complexity: O(...) with brief explanation.
 5. **Algorithm** — 2-4 numbered steps explaining how the algorithm works, clear enough to explain to the interviewer.
 
-NEVER skip the Intuition section. NEVER generate sample Q&A or practice questions. Start with "Approach:" immediately.`;
+NEVER skip the Intuition section. Start with "Approach:" immediately.
+
+=== IF INTERVIEW QUESTIONS visible on screen ===
+- Answer each question concisely (2-4 sentences per question)
+
+=== IF SOMETHING ELSE (dashboard, settings, billing page, documentation, etc.) ===
+- Briefly describe what you see in 1-2 sentences
+- Do NOT generate code, do NOT invent interview questions, do NOT create fake problems
+- Just answer what the user asked about the screenshot
+
+NEVER generate sample Q&A or practice questions.`;
         } else {
             // Audio transcriptions — brevity for non-coding, full format for coding requests
             return `
