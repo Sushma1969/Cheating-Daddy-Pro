@@ -365,19 +365,23 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                             const parts = [];
 
                             if (input.text) {
-                                // Add language reminder for non-English languages
                                 let finalText = input.text;
-                                if (storedLanguageName !== 'English') {
-                                    finalText = `${input.text} (Remember: Respond in ${storedLanguageName})`;
-                                }
                                 // Append per-message hints for exam mode (coding → code only, MCQ → answer option)
                                 if (currentMode === 'coding') {
                                     finalText += getExamMessageHint();
                                 }
+                                // Add language reminder LAST so it's the final instruction the model sees
+                                if (storedLanguageName !== 'English') {
+                                    finalText += `\n\nCRITICAL: You MUST respond entirely in ${storedLanguageName}. Do NOT respond in English.`;
+                                }
                                 parts.push({ text: finalText });
                             } else if (input.media && currentMode === 'coding') {
                                 // Screenshot-only (no text) in exam mode: add hint as text part
-                                parts.push({ text: getExamMessageHint() });
+                                let hintText = getExamMessageHint();
+                                if (storedLanguageName !== 'English') {
+                                    hintText += `\n\nCRITICAL: You MUST respond entirely in ${storedLanguageName}. Do NOT respond in English.`;
+                                }
+                                parts.push({ text: hintText });
                             }
 
                             if (input.media) {
@@ -387,9 +391,9 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                                         data: input.media.data
                                     }
                                 });
-                                // Add language reminder for non-English when only screenshot (no text provided)
-                                if (!input.text && storedLanguageName !== 'English') {
-                                    parts.push({ text: `(Remember: Respond in ${storedLanguageName})` });
+                                // Add language reminder for non-English when only screenshot (no text, no exam hint)
+                                if (!input.text && currentMode !== 'coding' && storedLanguageName !== 'English') {
+                                    parts.push({ text: `CRITICAL: You MUST respond entirely in ${storedLanguageName}. Do NOT respond in English.` });
                                 }
                             }
 
@@ -1193,7 +1197,12 @@ async function chatWithGeminiText(text, imageData = null) {
     if (text) {
         // Append full formatting instructions from prompts.js (profile-aware)
         // Gemini follows per-message instructions better than system prompt alone
-        input.text = text + getGeminiMessageHint(hasImage, currentProfile);
+        let finalText = text + getGeminiMessageHint(hasImage, currentProfile);
+        // Add language reminder AFTER the hint so it's the last instruction the model sees
+        if (storedLanguageName !== 'English') {
+            finalText += `\n\nCRITICAL: You MUST respond entirely in ${storedLanguageName}. Do NOT respond in English.`;
+        }
+        input.text = finalText;
     }
     if (imageData) {
         input.media = { data: imageData, mimeType: 'image/jpeg' };

@@ -284,8 +284,8 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
             mediaStream = await navigator.mediaDevices.getDisplayMedia({
                 video: {
                     frameRate: 1,
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 },
                 },
                 audio: false, // Don't use browser audio on macOS
             });
@@ -722,12 +722,12 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
 
                 // Profile-aware screenshot prompt — tells the model what context to analyze in
                 const screenshotPrompts = {
-                    interview: 'Analyze this screenshot. If there is a coding problem, provide the solution. If there are interview questions, answer them concisely.',
-                    sales: 'Analyze this screenshot. Help with the sales situation shown — provide talking points, objection handling, or product positioning as needed.',
-                    meeting: 'Analyze this screenshot. Summarize key points, suggest responses, or help with any questions/agenda items shown.',
-                    presentation: 'Analyze this screenshot. Help improve or respond to what is shown — suggest talking points or answer any questions visible.',
-                    negotiation: 'Analyze this screenshot. Help with the negotiation — suggest counter-offers, strategies, or responses to what is shown.',
-                    exam: 'Analyze this screenshot and solve any problems or questions shown. Provide complete answers.',
+                    interview: 'Look at this screenshot. If it contains a coding problem, solve it. If it contains interview questions, answer them. If it contains something unrelated (a dashboard, settings page, etc.), just briefly describe what you see in 1 sentence — do NOT invent interview questions about it.',
+                    sales: 'Look at this screenshot. If it contains a sales-related situation, provide talking points, objection handling, or product positioning. If it contains something unrelated (a dashboard, settings page, etc.), just briefly describe what you see in 1 sentence — do NOT invent sales scenarios about it.',
+                    meeting: 'Look at this screenshot. If it contains meeting content, summarize key points, suggest responses, or help with agenda items. If it contains something unrelated (a dashboard, settings page, etc.), just briefly describe what you see in 1 sentence — do NOT invent meeting topics about it.',
+                    presentation: 'Look at this screenshot. If it contains presentation content, suggest talking points or answer questions visible. If it contains something unrelated (a dashboard, settings page, etc.), just briefly describe what you see in 1 sentence — do NOT invent presentation topics about it.',
+                    negotiation: 'Look at this screenshot. If it contains a negotiation situation, suggest counter-offers, strategies, or responses. If it contains something unrelated (a dashboard, settings page, etc.), just briefly describe what you see in 1 sentence — do NOT invent negotiation scenarios about it.',
+                    exam: 'Look at this screenshot and solve any problems or questions shown. Provide complete answers.',
                 };
                 const screenshotText = screenshotPrompts[selectedProfile] || screenshotPrompts.interview;
 
