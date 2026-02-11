@@ -719,7 +719,7 @@ function buildCondensedSystemPrompt(profile, customPrompt = '') {
 ALWAYS provide 5-part structured solution:
 1. **Approach:** Name the technique
 2. **Intuition:** 2-3 paragraphs explaining WHY
-3. **Implementation:** Clean code, NO COMMENTS, EXACT function signature from screenshot
+3. **Implementation:** Clean code, EXACT function signature from screenshot. Add brief inline comments ONLY where the logic is non-obvious — do NOT over-comment
 4. **Complexity:** Time O(...) and Space O(...)
 5. **Algorithm:** 3-4 numbered steps
 
@@ -1022,7 +1022,7 @@ MANDATORY 5-SECTION FORMAT:
    - Key insights that make this approach work
    - Mathematical concepts or patterns if applicable
    - WHY this approach solves the problem effectively
-3. **Implementation** — Clean, optimized code with NO COMMENTS inside the code block. Use the EXACT function signature from the screenshot. Ready-to-run solution.
+3. **Implementation** — Clean, optimized code. Add brief inline comments ONLY where the logic is non-obvious or tricky — do NOT over-comment. Use the EXACT function signature from the screenshot. Ready-to-run solution.
 4. **Complexity Analysis** — Time complexity: O(...) with brief explanation. Space complexity: O(...) with brief explanation.
 5. **Algorithm** — 2-4 numbered steps explaining how the algorithm works, clear enough to explain to the interviewer.
 
@@ -1037,7 +1037,7 @@ IF this is a CODING request (write code, implement algorithm, use X approach, so
 Provide the FULL 5-SECTION structured solution:
 1. **Approach: [Name]** — Name the technique
 2. **Intuition** — 2-4 detailed paragraphs explaining WHY this approach works, key insights, core logic
-3. **Implementation** — Full working code block, NO COMMENTS inside, ready to run
+3. **Implementation** — Full working code block, ready to run. Add brief inline comments ONLY where the logic is non-obvious — do NOT over-comment
 4. **Complexity Analysis** — Time O(...) and Space O(...) with brief explanations
 5. **Algorithm** — 2-4 numbered steps explaining how it works
 NEVER skip the Intuition section for coding problems.
