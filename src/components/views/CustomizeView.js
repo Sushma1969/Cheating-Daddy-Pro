@@ -1336,37 +1336,6 @@ export class CustomizeView extends LitElement {
                     </div>
                 </div>
 
-                <!-- Stealth Profile Section -->
-                <div class="settings-section">
-                    <div class="section-title">
-                        <span>Stealth Profile</span>
-                    </div>
-                    <div class="form-grid">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">Profile</label>
-                                <custom-dropdown
-                                    .value=${localStorage.getItem('stealthProfile') || 'ultra'}
-                                    .options=${[
-                                        { value: 'visible', label: 'Visible' },
-                                        { value: 'balanced', label: 'Balanced' },
-                                        { value: 'ultra', label: 'Ultra-Stealth' }
-                                    ]}
-                                    @change=${e => {
-                                        localStorage.setItem('stealthProfile', e.detail.value);
-                                        // We need to notify the main process to restart for some settings to apply
-                                        alert('Restart the application for stealth changes to take full effect.');
-                                        this.requestUpdate();
-                                    }}
-                                ></custom-dropdown>
-                                <div class="form-description">
-                                    Adjusts visibility and detection resistance. A restart is required for changes to apply.
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
 
                 <!-- Language & Audio Section -->
                 <div class="settings-section">

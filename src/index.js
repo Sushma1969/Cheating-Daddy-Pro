@@ -173,22 +173,6 @@ function setupGeneralIpcHandlers() {
         }
     });
 
-    ipcMain.handle('set-stealth-level', async (event, stealthLevel) => {
-        try {
-            const validLevels = ['visible', 'balanced', 'ultra'];
-            if (!validLevels.includes(stealthLevel)) {
-                throw new Error(`Invalid stealth level: ${stealthLevel}. Must be one of: ${validLevels.join(', ')}`);
-            }
-            
-            const config = getLocalConfig();
-            config.stealthLevel = stealthLevel;
-            writeConfig(config);
-            return { success: true, config };
-        } catch (error) {
-            console.error('Error setting stealth level:', error);
-            return { success: false, error: error.message };
-        }
-    });
 
     ipcMain.handle('set-layout', async (event, layout) => {
         try {
