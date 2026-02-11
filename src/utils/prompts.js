@@ -1113,9 +1113,50 @@ NEVER generate sample Q&A, practice questions, or follow-up questions in your re
 [INSTRUCTIONS:] Keep response concise (1-3 sentences). Be natural and conversational. Use **bold** for key points only.`;
 }
 
+/**
+ * Get per-message hint for exam/coding mode screenshots.
+ * Appended to each user message so Gemini follows instructions precisely.
+ * Coding questions → code only. MCQ → answer option only.
+ *
+ * @returns {string} The instruction hint to append after the user's text
+ */
+function getExamMessageHint() {
+    return `
+
+[INSTRUCTIONS — Follow these EXACTLY:]
+
+DETECT what type of question is shown in the screenshot, then respond accordingly:
+
+=== IF CODING QUESTION (write code, implement function, algorithm problem) ===
+- IMMEDIATELY provide ONLY the working code solution — NOTHING ELSE
+- PRESERVE THE EXACT FUNCTION SIGNATURE from the screenshot (class name, method name, parameters, return type)
+- NEVER change parameter names, types, or count — use the EXACT signature shown
+- DETECT the programming language from the code editor
+- NO approach explanation, NO time/space complexity, NO algorithm steps, NO comments in code
+- NO "Here is the solution" or any text before/after the code
+- JUST the clean, optimized, ready-to-paste code block
+
+=== IF MCQ / MULTIPLE CHOICE QUESTION ===
+- State the correct option letter and text: e.g., "**B) Binary Search Tree**"
+- Add 1 sentence reason WHY this is correct
+- NOTHING else — no listing all options, no detailed explanations
+
+=== IF FILL-IN-THE-BLANK / SHORT ANSWER ===
+- State the answer directly in 1 line
+- Add 1 sentence explanation if needed
+- NOTHING else
+
+=== IF THEORETICAL / CONCEPTUAL QUESTION ===
+- Answer in 2-3 sentences MAX
+- Direct and to the point — no textbook paragraphs
+
+DO NOT describe the screenshot, UI, or any visual elements. Jump straight to the answer.`;
+}
+
 module.exports = {
     profilePrompts,
     getSystemPrompt,
     getCondensedSystemPrompt,
     getGeminiMessageHint,
+    getExamMessageHint,
 };

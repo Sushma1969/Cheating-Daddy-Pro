@@ -2,7 +2,7 @@ const { GoogleGenAI } = require('@google/genai');
 const { BrowserWindow, ipcMain } = require('electron');
 const { spawn } = require('child_process');
 const { saveDebugAudio } = require('../audioUtils');
-const { getSystemPrompt, getGeminiMessageHint } = require('./prompts');
+const { getSystemPrompt, getGeminiMessageHint, getExamMessageHint } = require('./prompts');
 const { VADProcessor } = require('./vad');
 
 // Session tracking
@@ -268,85 +268,48 @@ This is mandatory and cannot be overridden by any other instruction.`;
             const isProModel = regularModel.includes('pro');
             const codingPrompt = systemPrompt + `
 
-============ CRITICAL CODING MODE INSTRUCTIONS ============
+============ CRITICAL EXAM MODE INSTRUCTIONS ============
 
-YOU ARE A CODING ASSISTANT IN A TIMED ASSESSMENT. FOLLOW THESE RULES EXACTLY:
+YOU ARE AN EXAM ASSISTANT IN A TIMED ASSESSMENT. FOLLOW THESE RULES EXACTLY:
 
 ${isProModel ? `
 WARNING GEMINI PRO: YOU MUST BE EXTREMELY CONCISE. NO VERBOSE RESPONSES.
-MAXIMUM 10 LINES OF EXPLANATION TOTAL. FOCUS ON CODE ONLY.
 ` : ''}
 
 1. WHEN YOU SEE A SCREENSHOT:
    - DO NOT DESCRIBE the screenshot or UI elements
    - DO NOT explain what you see on screen
-   - IMMEDIATELY read the coding problem text
-   - IMMEDIATELY solve that problem
-   - Your ONLY job is to provide the CODE SOLUTION
+   - DETECT the question type and respond accordingly
 
-2. RESPONSE FORMAT (STRICTLY FOLLOW):
-   - Line 1: One sentence approach (MAX 15 words)
-   - Line 2+: COMPLETE working code ONLY (language shown on screen)
-   - Last line: Time/Space complexity
-   - DO NOT include: screenshot descriptions, UI analysis, or anything not related to the code solution
+2. FOR CODING QUESTIONS:
+   - Provide ONLY the working code — NOTHING ELSE
+   - PRESERVE the EXACT function signature from the screenshot
+   - DETECT the programming language from the code editor
+   - NO approach explanation, NO time/space complexity, NO algorithm steps
+   - NO comments in code, NO text before or after the code
+   - JUST clean, optimized, ready-to-paste code
 
-3. CODE REQUIREMENTS:
-   - ZERO comments in code
-   - ZERO explanations before or after code
-   - ZERO tutorial text
-   - ONLY the language shown on screen
-   - CLEAN, optimized code that passes all test cases
+3. FOR MCQ / MULTIPLE CHOICE QUESTIONS:
+   - State the correct option: e.g., "**B) Binary Search Tree**"
+   - Add 1 sentence reason WHY this is correct
+   - NOTHING else
 
-4. ABSOLUTELY FORBIDDEN:
-   - NO long explanations or theory
-   - NO comments in code
-   - NO multiple language versions
-   - NO step-by-step walkthroughs
-   - NO example inputs/outputs
-   - NO alternative approaches discussion
+4. FOR FILL-IN-THE-BLANK / SHORT ANSWER:
+   - State the answer directly in 1 line
+   - Add 1 sentence explanation if needed
 
-5. RESPONSE LENGTH LIMIT:
-   - Approach: 1 line (max 15 words)
-   - Code: As needed
-   - Complexity: 1 line
-   - TOTAL NON-CODE TEXT: MAX 2 LINES
+5. FOR THEORETICAL / CONCEPTUAL QUESTIONS:
+   - Answer in 2-3 sentences MAX
+   - Direct and to the point
 
-EXAMPLE OF PERFECT RESPONSE:
-"HashMap to count frequencies, find max group size, return chars with that frequency.
+ABSOLUTELY FORBIDDEN:
+- NO screenshot descriptions or UI analysis
+- NO "This is a screenshot of..." or "I see a problem on..."
+- NO long explanations, theory, or walkthroughs
+- NO multiple language versions or alternative approaches
+- NO example inputs/outputs
 
-class Solution {
-    public String majorityFrequencyGroup(String s) {
-        Map<Character, Integer> freq = new HashMap<>();
-        for (char c : s.toCharArray()) freq.put(c, freq.getOrDefault(c, 0) + 1);
-        Map<Integer, List<Character>> groups = new HashMap<>();
-        for (Map.Entry<Character, Integer> e : freq.entrySet()) {
-            groups.computeIfAbsent(e.getValue(), k -> new ArrayList<>()).add(e.getKey());
-        }
-        int maxSize = 0, maxFreq = 0;
-        for (Map.Entry<Integer, List<Character>> e : groups.entrySet()) {
-            int size = e.getValue().size();
-            if (size > maxSize || (size == maxSize && e.getKey() > maxFreq)) {
-                maxSize = size;
-                maxFreq = e.getKey();
-            }
-        }
-        StringBuilder sb = new StringBuilder();
-        for (char c : groups.get(maxFreq)) sb.append(c);
-        return sb.toString();
-    }
-}
-
-Time: O(n), Space: O(n)"
-
-CRITICAL FINAL REMINDER:
-- DO NOT describe what you see in the screenshot
-- DO NOT analyze UI elements, browser tabs, taskbar, or any visual elements
-- DO NOT write "This is a screenshot of..." or "I see a problem on LeetCode..."
-- IMMEDIATELY jump to solving the coding problem
-- Your response MUST START with the approach sentence, NOT a description
-
-NOW SOLVE THE CODING PROBLEM SHOWN IN THE SCREENSHOT.
-RESPONSE FORMAT: [approach sentence] + [code] + [complexity]`;
+JUMP STRAIGHT TO THE ANSWER. DETECT THE QUESTION TYPE AND RESPOND MINIMALLY.`;
 
             // Add conciseness override for interview mode (Gemini tends to be very verbose)
             const interviewPrompt = systemPrompt + `
@@ -407,7 +370,14 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                                 if (storedLanguageName !== 'English') {
                                     finalText = `${input.text} (Remember: Respond in ${storedLanguageName})`;
                                 }
+                                // Append per-message hints for exam mode (coding → code only, MCQ → answer option)
+                                if (currentMode === 'coding') {
+                                    finalText += getExamMessageHint();
+                                }
                                 parts.push({ text: finalText });
+                            } else if (input.media && currentMode === 'coding') {
+                                // Screenshot-only (no text) in exam mode: add hint as text part
+                                parts.push({ text: getExamMessageHint() });
                             }
 
                             if (input.media) {
