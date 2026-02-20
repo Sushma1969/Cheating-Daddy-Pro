@@ -1,3 +1,5 @@
+# Cheating Daddy Pro v1.0.0
+
 <img width="1299" height="424" alt="cd (1)" src="https://github.com/user-attachments/assets/b25fff4d-043d-4f38-9985-f832ae0d0f6e" />
 
 > [!NOTE]  
@@ -11,7 +13,7 @@ A real-time AI assistant that provides contextual help during video calls, inter
 ### AI & Model Features
 - **Dual Mode Support**: Interview Mode (with live audio) & Exam Assistant Mode 
 - **Multi-Model Support**:
-  - **Gemini Models**: Gemini 2.0 Flash Exp (Live API), Gemini 2.5 Flash, Gemini 3 Pro Preview
+  - **Gemini Models**: Gemini 2.5 Flash Lite, Gemini 2.5 Flash, Gemini 3 Flash Preview and Gemini 3 Pro Preview.
   - **Groq Llama Models**: Llama 4 Maverick, Llama 4 Scout (for interview mode)
 - **Model Generation Settings**: Customize Temperature, Top P, and Max Output Tokens per model
 - **Per-Model Settings Persistence**: Your custom settings are saved separately for each model
@@ -51,17 +53,17 @@ A real-time AI assistant that provides contextual help during video calls, inter
 
 ## Usage
 
-1. Enter your API key(s) in the main window:
+1. Enter your API keys in the main window:
    - Gemini API key for Gemini models
    - Groq API key for Llama 4 Maverick/Scout models
 2. Choose your profile and language in settings
 3. Select your preferred model:
-   - **Interview Mode**: Gemini 2.5 Flash Lite or Groq Llama models
-   - **Exam Mode**: Gemini 2.5 Flash or Gemini 3 Pro Preview
-4. Select your preferred VAD mode (Automatic or Manual) in Interview Mode
-5. Click "Start Session" to begin
-6. Position the window using keyboard shortcuts
-7. The AI will provide real-time assistance based on your screen and what interviewer asks
+   - **Interview Mode**: Gemini 2.5 Flash Lite or Groq Llama Maverick & Scout model.
+   - **Exam Mode**: Gemini 2.5 Flash, Gemini 3 Flash Preview and Gemini 3 Pro Preview.
+4. Select your preferred VAD mode (Automatic or Manual) in Interview Mode.
+5. Click "Start Session" to begin.
+6. Position the window using keyboard shortcuts.
+7. The AI will provide real-time assistance based on your screen and what interviewer asks.
 
 ## Performance & Optimizations
 
@@ -125,12 +127,12 @@ A real-time AI assistant that provides contextual help during video calls, inter
 - **Dock Hiding**: App icon hidden from Dock
 - **Panel Window Type**: Hidden from Cmd+Tab and Mission Control
 - **Screen Saver Level**: App remains visible even over screen savers
-- **Configurable Profiles**: Ultra-Stealth, Balanced, and Visible modes
 
 ### If audio doesn't work:
 1. Grant Screen Recording permission: System Settings → Privacy & Security → Screen Recording
 2. After building, set permissions: `chmod +x cheating-daddy.app/Contents/Resources/SystemAudioDump`
 3. If you still get issuess with permission for system audio dump use `sudo tccutil reset ScreenCapture`
+4. After Granting Permissions Restart the app.
 
 ### Platform-Specific Audio Capture:
 - **Windows**: Loopback audio capture
