@@ -57,6 +57,15 @@ function fetchLatestRelease() {
                     }
                 } else if (res.statusCode === 404) {
                     reject(new Error('No releases found'));
+                } else if (res.statusCode === 403) {
+                    const rateLimitRemaining = res.headers['x-ratelimit-remaining'];
+                    if (rateLimitRemaining === '0') {
+                        const resetTime = res.headers['x-ratelimit-reset'];
+                        const resetDate = resetTime ? new Date(parseInt(resetTime) * 1000).toLocaleTimeString() : 'soon';
+                        reject(new Error(`GitHub API rate limit exceeded. Resets at ${resetDate}`));
+                    } else {
+                        reject(new Error('GitHub API access forbidden - check repository visibility'));
+                    }
                 } else {
                     reject(new Error(`GitHub API error: ${res.statusCode}`));
                 }

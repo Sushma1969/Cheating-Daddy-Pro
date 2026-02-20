@@ -471,7 +471,7 @@ export class CustomizeView extends LitElement {
 
     constructor() {
         super();
-        this.selectedProfile = 'exam';
+        this.selectedProfile = 'interview';
         this.selectedLanguage = 'en-US';
         this.selectedScreenshotInterval = 'manual';
         this.selectedImageQuality = 'high';

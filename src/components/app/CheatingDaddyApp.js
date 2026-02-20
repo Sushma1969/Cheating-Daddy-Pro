@@ -125,7 +125,7 @@ export class CheatingDaddyApp extends LitElement {
         this.startTime = null;
         this.isRecording = false;
         this.sessionActive = false;
-        this.selectedProfile = localStorage.getItem('selectedProfile') || 'exam';
+        this.selectedProfile = localStorage.getItem('selectedProfile') || 'interview';
         this.selectedLanguage = localStorage.getItem('selectedLanguage') || 'en-US';
         this.selectedScreenshotInterval = 'manual'; // Always manual to prevent rate limits
         this.selectedImageQuality = localStorage.getItem('selectedImageQuality') || 'high';

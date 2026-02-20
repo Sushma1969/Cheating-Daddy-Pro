@@ -400,10 +400,10 @@ export class HelpView extends LitElement {
                         <div class="community-link" @click=${() => this.handleExternalLinkClick('https://cheatingdaddy.com')}>
                             🌐 Official Website
                         </div>
-                        <div class="community-link" @click=${() => this.handleExternalLinkClick('https://github.com/sohzm/cheating-daddy')}>
+                        <div class="community-link" @click=${() => this.handleExternalLinkClick('https://github.com/Sushma1969/cheating-daddy')}>
                             📂 GitHub Repository
                         </div>
-                        <div class="community-link" @click=${() => this.handleExternalLinkClick('https://discord.gg/GCBdubnXfJ')}>
+                        <div class="community-link" @click=${() => this.handleExternalLinkClick('https://discord.gg/d3KBP5Fc')}>
                             💬 Discord Community
                         </div>
                     </div>
@@ -508,20 +508,19 @@ export class HelpView extends LitElement {
                         <span>How to Use</span>
                     </div>
                     <div class="usage-steps">
-                        <div class="usage-step"><strong>Start a Session:</strong> Enter your Gemini API key and click "Start Session"</div>
-                        <div class="usage-step"><strong>Customize:</strong> Choose your profile and language in the settings</div>
+                        <div class="usage-step"><strong>Enter Groq API Key:</strong> After a fresh install, you'll land on the setup screen. Enter your Groq API key to get started with Llama models and interview sessions.</div>
+                        <div class="usage-step"><strong>Choose Your Profile:</strong> Head to the Customize tab and select a profile based on your use case like Job Interview, Sales Call, Business Meeting, Presentation, Negotiation, or Exam Assistant.</div>
+                        <div class="usage-step"><strong>For OA & Coding Test (Exam Assistant):</strong> Select the Exam Assistant profile to use screenshot-based analysis. Available models: <strong>Gemini 2.5 Flash</strong>,<strong>Gemini 3 Flash Preview</strong> and <strong>Gemini 3 Pro Preview</strong>. Requires a Gemini API key.</div>
+                        <div class="usage-step"><strong>For Interview Profiles:</strong> All other profiles use real-time audio interview mode. Available models: <strong>Gemini 2.5 Flash Lite</strong>, <strong>Llama 4 Maverick</strong>, and <strong>Llama 4 Scout</strong>.</div>
+                        <div class="usage-step"><strong>API Keys for Interview Mode:</strong> For <strong>Llama 4 Maverick</strong> and <strong>Llama 4 Scout</strong>, only a Groq API key is needed. For <strong>Gemini 2.5 Flash Lite</strong>, you must enter both your Groq API key and Gemini API key.</div>
+                        <div class="usage-step"><strong>Start a Session:</strong> Once your API keys and profile are set, click "Start Session" to begin.</div>
                         <div class="usage-step">
-                            <strong>Position Window:</strong> Use keyboard shortcuts to move the window to your desired location
+                            <strong>Position & Control:</strong> Use keyboard shortcuts to move the window. Press ${this.formatKeybind(this.keybinds.toggleClickThrough)} for click-through mode.
                         </div>
-                        <div class="usage-step">
-                            <strong>Click-through Mode:</strong> Use ${this.formatKeybind(this.keybinds.toggleClickThrough)} to make the window
-                            click-through
-                        </div>
-                        <div class="usage-step"><strong>Get AI Help:</strong> The AI will analyze your screen and audio to provide assistance</div>
-                        <div class="usage-step"><strong>Text Messages:</strong> Type questions or requests to the AI using the text input</div>
+                        <div class="usage-step"><strong>Get AI Help:</strong> The AI will analyze your screen and audio to provide real-time assistance. You can also type questions using the text input.</div>
                         <div class="usage-step">
                             <strong>Navigate Responses:</strong> Use ${this.formatKeybind(this.keybinds.previousResponse)} and
-                            ${this.formatKeybind(this.keybinds.nextResponse)} to browse through AI responses
+                            ${this.formatKeybind(this.keybinds.nextResponse)} to browse through AI responses.
                         </div>
                     </div>
                 </div>
