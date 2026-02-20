@@ -5,6 +5,13 @@ const { saveDebugAudio } = require('../audioUtils');
 const { getSystemPrompt, getGeminiMessageHint, getExamMessageHint } = require('./prompts');
 const { VADProcessor } = require('./vad');
 
+// Lazy-load groq to avoid circular dependency
+let _groq = null;
+function getGroq() {
+    if (!_groq) _groq = require('./groq');
+    return _groq;
+}
+
 // Session tracking
 let isInitializingSession = false;
 let storedLanguageName = 'English';
@@ -783,9 +790,16 @@ async function startMacOSAudioCapture(geminiSessionRef, vadEnabled = false, vadM
                 try {
                     // Convert Float32Array to PCM Buffer
                     const pcmBuffer = convertFloat32ToPCMBuffer(audioSegment);
-                    const base64Data = pcmBuffer.toString('base64');
-                    await sendAudioToGemini(base64Data, geminiSessionRef);
-                    console.log('🎤 [macOS VAD] Audio segment sent:', metadata);
+
+                    // Route to Groq Whisper STT if Groq is initialized, otherwise fall back to Gemini
+                    if (getGroq().isGroqInitialized()) {
+                        getGroq().addAudioChunk(pcmBuffer);
+                        console.log('🎤 [macOS VAD] Audio chunk sent to Groq:', metadata);
+                    } else {
+                        const base64Data = pcmBuffer.toString('base64');
+                        await sendAudioToGemini(base64Data, geminiSessionRef);
+                        console.log('🎤 [macOS VAD] Audio segment sent to Gemini:', metadata);
+                    }
                 } catch (error) {
                     console.error('❌ [macOS VAD] Failed to send audio segment:', error);
                 }
@@ -817,9 +831,13 @@ async function startMacOSAudioCapture(geminiSessionRef, vadEnabled = false, vadM
                 const float32Audio = convertPCMBufferToFloat32(monoChunk);
                 macVADProcessor.processAudio(float32Audio);
             } else {
-                // No VAD: send directly to Gemini (legacy behavior)
-                const base64Data = monoChunk.toString('base64');
-                sendAudioToGemini(base64Data, geminiSessionRef);
+                // No VAD: route to Groq if initialized, otherwise Gemini
+                if (getGroq().isGroqInitialized()) {
+                    getGroq().addAudioChunk(monoChunk);
+                } else {
+                    const base64Data = monoChunk.toString('base64');
+                    sendAudioToGemini(base64Data, geminiSessionRef);
+                }
             }
 
             if (process.env.DEBUG_AUDIO) {
