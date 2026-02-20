@@ -5,6 +5,13 @@ const { saveDebugAudio } = require('../audioUtils');
 const { getSystemPrompt, getGeminiMessageHint, getExamMessageHint } = require('./prompts');
 const { VADProcessor } = require('./vad');
 
+// Lazy-load groq to avoid circular dependency
+let _groq = null;
+function getGroq() {
+    if (!_groq) _groq = require('./groq');
+    return _groq;
+}
+
 // Session tracking
 let isInitializingSession = false;
 let storedLanguageName = 'English';
@@ -783,9 +790,16 @@ async function startMacOSAudioCapture(geminiSessionRef, vadEnabled = false, vadM
                 try {
                     // Convert Float32Array to PCM Buffer
                     const pcmBuffer = convertFloat32ToPCMBuffer(audioSegment);
-                    const base64Data = pcmBuffer.toString('base64');
-                    await sendAudioToGemini(base64Data, geminiSessionRef);
-                    console.log('🎤 [macOS VAD] Audio segment sent:', metadata);
+
+                    // Route to Groq Whisper STT if Groq is initialized, otherwise fall back to Gemini
+                    if (getGroq().isGroqInitialized()) {
+                        getGroq().addAudioChunk(pcmBuffer);
+                        console.log('🎤 [macOS VAD] Audio chunk sent to Groq:', metadata);
+                    } else {
+                        const base64Data = pcmBuffer.toString('base64');
+                        await sendAudioToGemini(base64Data, geminiSessionRef);
+                        console.log('🎤 [macOS VAD] Audio segment sent to Gemini:', metadata);
+                    }
                 } catch (error) {
                     console.error('❌ [macOS VAD] Failed to send audio segment:', error);
                 }
@@ -797,6 +811,8 @@ async function startMacOSAudioCapture(geminiSessionRef, vadEnabled = false, vadM
         console.log('✅ [macOS] VAD processor initialized');
     }
 
+    let audioRouteLogged = false; // Log which audio route is used on first chunk
+
     systemAudioProc.stdout.on('data', data => {
         audioBuffer = Buffer.concat([audioBuffer, data]);
 
@@ -806,20 +822,45 @@ async function startMacOSAudioCapture(geminiSessionRef, vadEnabled = false, vadM
 
             const monoChunk = CHANNELS === 2 ? convertStereoToMono(chunk) : chunk;
 
-            if (macVADEnabled && macVADProcessor) {
-                // VAD mode: process through VAD
-                if (!macMicrophoneEnabled) {
-                    // Skip audio processing if mic is OFF in manual mode
-                    continue;
-                }
+            // Skip audio if mic is OFF in manual VAD mode
+            if (macVADEnabled && !macMicrophoneEnabled) {
+                continue;
+            }
 
-                // Convert PCM Buffer to Float32Array for VAD
+            // Determine if VAD is actually ready to process audio
+            // VAD init is async - it may not be ready yet, or may have failed (e.g. ONNX load failure in packaged app)
+            const vadReady = macVADEnabled && macVADProcessor && macVADProcessor.vad && macVADProcessor.state !== 'IDLE';
+
+            // Log routing decision once for debugging
+            if (!audioRouteLogged) {
+                audioRouteLogged = true;
+                const groqReady = getGroq().isGroqInitialized();
+                console.log(`[macOS Audio] Routing: vadEnabled=${macVADEnabled}, vadReady=${vadReady}, groqReady=${groqReady}, vadState=${macVADProcessor?.state || 'N/A'}, vadInstance=${!!macVADProcessor?.vad}`);
+                if (vadReady) {
+                    console.log('[macOS Audio] → Using VAD pipeline');
+                } else if (groqReady) {
+                    console.log('[macOS Audio] → Sending directly to Groq (VAD bypassed)');
+                } else {
+                    console.log('[macOS Audio] → Sending to Gemini (fallback)');
+                }
+            }
+
+            if (vadReady) {
+                // VAD is ready: process through VAD
                 const float32Audio = convertPCMBufferToFloat32(monoChunk);
                 macVADProcessor.processAudio(float32Audio);
             } else {
-                // No VAD: send directly to Gemini (legacy behavior)
-                const base64Data = monoChunk.toString('base64');
-                sendAudioToGemini(base64Data, geminiSessionRef);
+                // No VAD, or VAD not ready/failed: send audio directly to Groq or Gemini
+                try {
+                    if (getGroq().isGroqInitialized()) {
+                        getGroq().addAudioChunk(monoChunk);
+                    } else {
+                        const base64Data = monoChunk.toString('base64');
+                        sendAudioToGemini(base64Data, geminiSessionRef);
+                    }
+                } catch (error) {
+                    console.error('[macOS Audio] Error routing audio chunk:', error.message);
+                }
             }
 
             if (process.env.DEBUG_AUDIO) {

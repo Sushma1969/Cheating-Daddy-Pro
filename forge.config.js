@@ -9,23 +9,6 @@ module.exports = {
         extraResource: ['./src/assets/SystemAudioDump'],
         name: 'Cheating Daddy Pro',
         icon: 'src/assets/logo.png',
-        // Set executable permissions for SystemAudioDump on macOS
-        afterCopy: [
-            (buildPath, electronVersion, platform, arch, callback) => {
-                if (platform === 'darwin') {
-                    const fs = require('fs');
-                    const path = require('path');
-                    const binaryPath = path.join(buildPath, '../SystemAudioDump');
-                    try {
-                        fs.chmodSync(binaryPath, 0o755); // rwxr-xr-x
-                        console.log(' Set execute permissions for SystemAudioDump');
-                    } catch (error) {
-                        console.warn(' Failed to set permissions for SystemAudioDump:', error.message);
-                    }
-                }
-                callback();
-            }
-        ],
         // use `security find-identity -v -p codesigning` to find your identity
         // for macos signing
         // also fuck apple
@@ -45,6 +28,25 @@ module.exports = {
         // },
     },
     rebuildConfig: {},
+    hooks: {
+        // Set execute permissions for SystemAudioDump AFTER packaging completes
+        // (extraResource files are already copied at this point)
+        postPackage: async (forgeConfig, options) => {
+            if (options.platform === 'darwin') {
+                const fs = require('fs');
+                const path = require('path');
+                for (const outputPath of options.outputPaths) {
+                    const binaryPath = path.join(outputPath, 'Cheating Daddy Pro.app', 'Contents', 'Resources', 'SystemAudioDump');
+                    try {
+                        fs.chmodSync(binaryPath, 0o755);
+                        console.log('Set execute permissions for SystemAudioDump at:', binaryPath);
+                    } catch (error) {
+                        console.warn('Failed to set permissions for SystemAudioDump:', error.message);
+                    }
+                }
+            }
+        },
+    },
     makers: [
         {
             name: '@electron-forge/maker-squirrel',

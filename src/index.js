@@ -1,18 +1,13 @@
 // Handle Squirrel events manually to prevent desktop shortcuts
-if (require('electron').app) {
-    const squirrelCommand = process.argv[1];
-    if (handleSquirrelEvent(squirrelCommand)) {
-        return;
-    }
-}
-
-function handleSquirrelEvent(squirrelCommand) {
-    const app = require('electron').app;
-
+function handleSquirrelEvent() {
     if (process.platform !== 'win32') {
         return false;
     }
 
+    const squirrelCommand = process.argv[1];
+    if (!squirrelCommand) return false;
+
+    const app = require('electron').app;
     const path = require('path');
     const childProcess = require('child_process');
     const appFolder = path.resolve(process.execPath, '..');
@@ -20,18 +15,12 @@ function handleSquirrelEvent(squirrelCommand) {
     const updateDotExe = path.resolve(path.join(rootAtomFolder, 'Update.exe'));
     const exeName = path.basename(process.execPath);
 
-    const spawn = function(command, args) {
-        let spawnedProcess;
+    const spawnUpdate = function(args) {
         try {
-            spawnedProcess = childProcess.spawn(command, args, { detached: true });
+            childProcess.spawn(updateDotExe, args, { detached: true });
         } catch (error) {
             console.error('Spawn error:', error);
         }
-        return spawnedProcess;
-    };
-
-    const spawnUpdate = function(args) {
-        return spawn(updateDotExe, args);
     };
 
     switch (squirrelCommand) {
@@ -54,6 +43,12 @@ function handleSquirrelEvent(squirrelCommand) {
     }
 
     return false;
+}
+
+if (handleSquirrelEvent()) {
+    // Squirrel handled - app will quit via setTimeout above
+    // Use process.exit to avoid Illegal return statement
+    process.exit(0);
 }
 
 const { app, BrowserWindow, shell, ipcMain } = require('electron');
@@ -107,6 +102,13 @@ if (!gotTheLock) {
 
         // Log user data directory for debugging persistence issues
         console.log('Electron user data directory:', app.getPath('userData'));
+
+        // Trigger screen recording permission prompt on macOS if not already granted
+        // This is needed for SystemAudioDump to capture system audio
+        if (process.platform === 'darwin') {
+            const { desktopCapturer } = require('electron');
+            desktopCapturer.getSources({ types: ['screen'] }).catch(() => {});
+        }
 
         // Hide dock icon on macOS for stealth (similar to InterviewCoder)
         if (process.platform === 'darwin') {
