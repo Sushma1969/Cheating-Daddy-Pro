@@ -3,7 +3,7 @@ const https = require('https');
 
 // GitHub repository info
 const GITHUB_OWNER = 'Sushma1969';
-const GITHUB_REPO = 'cheating-daddy';
+const GITHUB_REPO = 'Cheating-Daddy-Pro';
 
 /**
  * Compare two semantic version strings

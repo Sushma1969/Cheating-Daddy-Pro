@@ -7,8 +7,8 @@ module.exports = {
             unpack: '**/{onnxruntime-node,@ricky0123}/**/*',
         },
         extraResource: ['./src/assets/SystemAudioDump'],
-        name: 'Cheating Daddy Pro',
-        icon: 'src/assets/logo.png',
+        name: 'Cheating Daddy',
+        icon: 'src/assets/logo',
         // use `security find-identity -v -p codesigning` to find your identity
         // for macos signing
         // also fuck apple
@@ -29,19 +29,36 @@ module.exports = {
     },
     rebuildConfig: {},
     hooks: {
-        // Set execute permissions for SystemAudioDump AFTER packaging completes
-        // (extraResource files are already copied at this point)
+        // After packaging: set permissions and ad-hoc sign the app for macOS
         postPackage: async (forgeConfig, options) => {
             if (options.platform === 'darwin') {
                 const fs = require('fs');
                 const path = require('path');
+                const { execSync } = require('child_process');
+
                 for (const outputPath of options.outputPaths) {
-                    const binaryPath = path.join(outputPath, 'Cheating Daddy Pro.app', 'Contents', 'Resources', 'SystemAudioDump');
+                    const appPath = path.join(outputPath, 'Cheating Daddy.app');
+                    const binaryPath = path.join(appPath, 'Contents', 'Resources', 'SystemAudioDump');
+
+                    // 1. Set execute permissions for SystemAudioDump
                     try {
                         fs.chmodSync(binaryPath, 0o755);
-                        console.log('Set execute permissions for SystemAudioDump at:', binaryPath);
+                        console.log('Set execute permissions for SystemAudioDump');
                     } catch (error) {
                         console.warn('Failed to set permissions for SystemAudioDump:', error.message);
+                    }
+
+                    // 2. Ad-hoc sign the entire .app bundle (including SystemAudioDump)
+                    // This is required for macOS TCC to properly grant screen recording
+                    // and system audio capture permissions to the app and its helper binaries.
+                    // Without signing, SystemAudioDump can't capture audio when the app
+                    // is launched via Finder (double-click) instead of Terminal.
+                    try {
+                        console.log('Ad-hoc signing app bundle...');
+                        execSync(`codesign --force --deep --sign - "${appPath}"`, { stdio: 'pipe' });
+                        console.log('Ad-hoc signed successfully:', appPath);
+                    } catch (error) {
+                        console.warn('Ad-hoc signing failed (app may not work when launched from Finder):', error.message);
                     }
                 }
             }
@@ -51,7 +68,7 @@ module.exports = {
         {
             name: '@electron-forge/maker-squirrel',
             config: {
-                name: 'cheating-daddy-pro',
+                name: 'cheating-daddy',
                 productName: 'Cheating Daddy Pro',
                 shortcutName: 'Cheating Daddy Pro',
                 createDesktopShortcut: false,
@@ -67,12 +84,12 @@ module.exports = {
             platforms: ['linux'],
             config: {
                 options: {
-                    name: 'Cheating Daddy Pro',
+                    name: 'Cheating Daddy',
                     productName: 'Cheating Daddy Pro',
                     genericName: 'AI Assistant',
                     description: 'AI assistant for interviews and learning',
                     categories: ['Development', 'Education'],
-                    icon: 'src/assets/logo.png',
+                    icon: 'src/assets/logo',
                     desktopIntegration: false  // Prevent automatic desktop shortcut creation
                 }
             },

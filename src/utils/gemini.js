@@ -794,11 +794,9 @@ async function startMacOSAudioCapture(geminiSessionRef, vadEnabled = false, vadM
                     // Route to Groq Whisper STT if Groq is initialized, otherwise fall back to Gemini
                     if (getGroq().isGroqInitialized()) {
                         getGroq().addAudioChunk(pcmBuffer);
-                        console.log('🎤 [macOS VAD] Audio chunk sent to Groq:', metadata);
                     } else {
                         const base64Data = pcmBuffer.toString('base64');
                         await sendAudioToGemini(base64Data, geminiSessionRef);
-                        console.log('🎤 [macOS VAD] Audio segment sent to Gemini:', metadata);
                     }
                 } catch (error) {
                     console.error('❌ [macOS VAD] Failed to send audio segment:', error);
