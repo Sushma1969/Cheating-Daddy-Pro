@@ -563,7 +563,7 @@ export class MainView extends LitElement {
                 ${isGroq ? html` (Using ${modelName} via Groq)` : html` (Using ${modelName})`}
             </p>
             <p class="shortcut-hint">
-                Press <strong>Ctrl+Alt+R</strong> to clear session and automatically restart
+                Click <span class="help-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z"></path><path d="M9 9C9 5.49997 14.5 5.5 14.5 9C14.5 11.5 12 10.9999 12 13.9999"></path><path d="M12 18.01L12.01 17.9989"></path></svg></span> in the header for help, keyboard shortcuts, and more
             </p>
         `;
     }
