@@ -434,7 +434,6 @@ function setupLinuxSystemAudioProcessing() {
                                     data: base64Data,
                                     mimeType: 'audio/pcm;rate=24000',
                                 });
-                                console.log('VAD audio segment sent to Gemini:', metadata);
                             }
                         } catch (error) {
                             console.error('Failed to send VAD audio segment:', error);
@@ -551,7 +550,6 @@ function setupWindowsLoopbackProcessing() {
                                     data: base64Data,
                                     mimeType: 'audio/pcm;rate=24000',
                                 });
-                                console.log('VAD audio segment sent to Gemini:', metadata);
                             }
                         } catch (error) {
                             console.error('Failed to send VAD audio segment:', error);

@@ -489,7 +489,7 @@ export class AdvancedView extends LitElement {
         'gemini-2.5-flash': 65536,
         'gemini-2.5-flash-lite': 65536,
         'gemini-3-flash-preview': 65536,
-        'gemini-3-pro-preview': 65536,
+        'gemini-3.1-pro-preview': 65536,
         // Groq Llama models
         'llama-4-maverick': 8192,
         'llama-4-scout': 8192,
@@ -517,8 +517,8 @@ export class AdvancedView extends LitElement {
             topP: 0.95,
             maxOutputTokens: 8192,
         },
-        // Gemini 3 Pro - Exam/Coding mode (very detailed, most accurate)
-        'gemini-3-pro-preview_coding': {
+        // Gemini 3.1 Pro - Exam/Coding mode (very detailed, most accurate)
+        'gemini-3.1-pro-preview_coding': {
             temperature: 0.4,
             topP: 0.95,
             maxOutputTokens: 16384,
@@ -603,7 +603,7 @@ export class AdvancedView extends LitElement {
             'gemini-2.5-flash': 'Gemini 2.5 Flash',
             'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
             'gemini-3-flash-preview': 'Gemini 3.0 Flash',
-            'gemini-3-pro-preview': 'Gemini 3.0 Pro',
+            'gemini-3.1-pro-preview': 'Gemini 3.1 Pro',
             'llama-4-maverick': 'Llama 4 Maverick',
             'llama-4-scout': 'Llama 4 Scout',
         };

@@ -118,7 +118,7 @@ const MODEL_MAX_OUTPUT_TOKENS = {
     'gemini-2.5-flash': 65536,
     'gemini-2.5-flash-lite': 65536,
     'gemini-3-flash-preview': 65536,
-    'gemini-3-pro-preview': 65536,
+    'gemini-3.1-pro-preview': 65536,
     // Groq Llama models
     'llama-4-maverick': 8192,
     'llama-4-scout': 8192,
@@ -452,11 +452,11 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
 
                             // Thinking levels (exam/coding mode only):
                             // Gemini 3 Flash → 'low' (fast but accurate)
-                            // Gemini 3 Pro → 'high' (best accuracy)
+                            // Gemini 3.1 Pro → 'high' (best accuracy)
                             // Gemini 2.5 Flash Lite → no thinking (off by default)
                             const thinkingConfig = this.model === 'gemini-3-flash-preview'
                                 ? { thinkingLevel: 'low' }
-                                : this.model === 'gemini-3-pro-preview'
+                                : this.model === 'gemini-3.1-pro-preview'
                                     ? { thinkingLevel: 'high' }
                                     : undefined;
 
@@ -470,14 +470,14 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                             const streamResult = await this.client.models.generateContentStream({
                                 model: this.model,
                                 contents: contents,
-                                systemInstruction: { parts: [{ text: this.systemPrompt }] },
-                                generationConfig: {
+                                config: {
+                                    systemInstruction: this.systemPrompt,
                                     temperature: generationSettings.temperature,
                                     topP: generationSettings.topP,
                                     maxOutputTokens: effectiveMaxTokens,
                                     ...(thinkingConfig ? { thinkingConfig } : {}),
+                                    tools: requestTools,
                                 },
-                                tools: requestTools,
                             });
 
                             // Stream the response as it arrives
@@ -493,25 +493,20 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
 
                             try {
                                 for await (const chunk of streamToIterate) {
-                                    if (chunk && chunk.candidates && chunk.candidates.length > 0) {
-                                        const candidate = chunk.candidates[0];
-                                        if (candidate.content && candidate.content.parts) {
-                                            for (const part of candidate.content.parts) {
-                                                if (part.text) {
-                                                    if (!firstChunkLogged) {
-                                                        console.log(`⏱️ First token: ${Date.now() - requestStartTime}ms`);
-                                                        firstChunkLogged = true;
-                                                    }
-                                                    responseText += part.text;
+                                    // Use SDK's .text getter which properly handles thinking parts
+                                    const chunkText = chunk.text;
+                                    if (chunkText) {
+                                        if (!firstChunkLogged) {
+                                            console.log(`⏱️ First token: ${Date.now() - requestStartTime}ms`);
+                                            firstChunkLogged = true;
+                                        }
+                                        responseText += chunkText;
 
-                                                    // Batch updates: Only send to UI every 50ms for smoother rendering
-                                                    const now = Date.now();
-                                                    if (now - lastUpdateTime >= UPDATE_INTERVAL) {
-                                                        sendToRenderer('update-response', responseText);
-                                                        lastUpdateTime = now;
-                                                    }
-                                                }
-                                            }
+                                        // Batch updates: Only send to UI every 50ms for smoother rendering
+                                        const now = Date.now();
+                                        if (now - lastUpdateTime >= UPDATE_INTERVAL) {
+                                            sendToRenderer('update-response', responseText);
+                                            lastUpdateTime = now;
                                         }
                                     }
                                 }

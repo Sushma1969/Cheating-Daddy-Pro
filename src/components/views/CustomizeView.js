@@ -629,7 +629,7 @@ export class CustomizeView extends LitElement {
             localStorage.setItem('selectedMode', 'coding');
 
             // Restore last-used coding model, or validate current one
-            const validCodingModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3-pro-preview'];
+            const validCodingModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3.1-pro-preview'];
             const lastCodingModel = localStorage.getItem('lastModel_coding');
             if (lastCodingModel && validCodingModels.includes(lastCodingModel)) {
                 this.selectedModel = lastCodingModel;
@@ -1102,7 +1102,7 @@ export class CustomizeView extends LitElement {
                 localStorage.setItem('selectedModel', this.selectedModel);
             }
         } else {
-            const validCodingModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3-pro-preview'];
+            const validCodingModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3.1-pro-preview'];
             if (!validCodingModels.includes(this.selectedModel)) {
                 this.selectedModel = 'gemini-2.5-flash';
                 localStorage.setItem('selectedModel', this.selectedModel);
@@ -1136,12 +1136,12 @@ export class CustomizeView extends LitElement {
             // Save current model for interview mode before switching
             localStorage.setItem('lastModel_interview', this.selectedModel);
 
-            const validCodingModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3-pro-preview'];
+            const validCodingModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3.1-pro-preview'];
             const lastCodingModel = localStorage.getItem('lastModel_coding');
             if (lastCodingModel && validCodingModels.includes(lastCodingModel)) {
                 this.selectedModel = lastCodingModel;
             } else if (!validCodingModels.includes(this.selectedModel)) {
-                this.selectedModel = 'gemini-3-pro-preview';
+                this.selectedModel = 'gemini-3.1-pro-preview';
             }
         }
         localStorage.setItem('selectedModel', this.selectedModel);
@@ -1238,7 +1238,7 @@ export class CustomizeView extends LitElement {
                                         .options=${[
                                             { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Faster, Balanced)', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
                                             { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview (Fast, Smart)', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
-                                            { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview (Slower, Most Accurate)', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' }
+                                            { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview (Slower, Most Accurate)', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' }
                                         ]}
                                         @change=${e => this.handleModelChange({ target: { value: e.detail.value } })}
                                     ></custom-dropdown>
