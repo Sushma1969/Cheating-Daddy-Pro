@@ -630,6 +630,15 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                         } else if (errMsg.includes('deprecated') || errMsg.includes('decommission')) {
                             shortMsg = 'Model Deprecated (Gemini)';
                             console.error('[GEMINI] Model deprecated by Google.');
+                        } else if (errMsg.includes('location is not supported') || errMsg.includes('failed_precondition') || errMsg.includes('user location')) {
+                            shortMsg = 'Region Not Supported (Gemini)';
+                            console.error('[GEMINI] User location is not supported. A VPN may be required.');
+                        } else if (errMsg.includes('quota') || errMsg.includes('resource_exhausted')) {
+                            shortMsg = 'Quota Exceeded (Gemini)';
+                        } else if (errMsg.includes('permission') || errMsg.includes('forbidden') || errMsg.includes('403')) {
+                            shortMsg = 'Access Denied (Gemini)';
+                        } else if (errMsg.includes('400')) {
+                            shortMsg = 'Bad Request (Gemini)';
                         }
 
                         sendToRenderer('update-status', shortMsg);

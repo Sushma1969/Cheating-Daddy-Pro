@@ -323,6 +323,15 @@ async function transcribeWithGroq(wavBuffer) {
                     } else if (res.statusCode === 413) {
                         sendToRenderer('update-status', 'Audio too long');
                         reject(new Error('Audio too long'));
+                    } else if (res.statusCode === 403) {
+                        const errLower = data.toLowerCase();
+                        if (errLower.includes('location') || errLower.includes('region') || errLower.includes('country')) {
+                            sendToRenderer('update-status', 'Region Not Supported (Groq)');
+                            reject(new Error('Region Not Supported (Groq)'));
+                        } else {
+                            sendToRenderer('update-status', 'Access Denied (Groq)');
+                            reject(new Error('Access Denied (Groq)'));
+                        }
                     } else if (res.statusCode === 400) {
                         sendToRenderer('update-status', 'Invalid request');
                         reject(new Error('Invalid request'));
@@ -506,6 +515,15 @@ async function chatWithLlama(userMessage, model = 'llama-4-maverick', imageData 
                         const rateLimit = parseRateLimitError(rawErrorBody);
                         scheduleRateLimitRecovery(rateLimit.statusMessage, rateLimit.recoveryMs);
                         reject(new Error(rateLimit.statusMessage));
+                    } else if (res.statusCode === 403) {
+                        const errLower = rawErrorBody.toLowerCase();
+                        if (errLower.includes('location') || errLower.includes('region') || errLower.includes('country')) {
+                            sendToRenderer('update-status', 'Region Not Supported (Groq)');
+                            reject(new Error('Region Not Supported (Groq)'));
+                        } else {
+                            sendToRenderer('update-status', 'Access Denied (Groq)');
+                            reject(new Error('Access Denied (Groq)'));
+                        }
                     } else if (res.statusCode === 413) {
                         sendToRenderer('update-status', 'Request too large');
                         reject(new Error('Request too large'));
