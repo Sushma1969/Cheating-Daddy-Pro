@@ -61,6 +61,18 @@ function scheduleGeminiRateLimitRecovery(statusMessage, recoveryMs = 60 * 1000) 
 }
 
 /**
+ * Clear any active Gemini rate limit countdown.
+ * Also called from groq.js on session init — quota is per model, so a stale Gemini
+ * countdown must not keep overwriting the header after switching to a Groq model.
+ */
+function clearGeminiRateLimitCountdown() {
+    if (rateLimitCountdownInterval) {
+        clearInterval(rateLimitCountdownInterval);
+        rateLimitCountdownInterval = null;
+    }
+}
+
+/**
  * Parse the Gemini 429 error to determine rate limit type and extract retry wait time.
  * Gemini errors include retryDelay in details: {"retryDelay":"30s"}
  * or "try again in XX.XXs" in the message text.
@@ -202,11 +214,10 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
     isInitializingSession = true;
     sendToRenderer('session-initializing', true);
 
-    // Clear any active rate limit countdown from previous session
-    if (rateLimitCountdownInterval) {
-        clearInterval(rateLimitCountdownInterval);
-        rateLimitCountdownInterval = null;
-    }
+    // Clear any active rate limit countdown from previous session — BOTH providers,
+    // so a stale Groq countdown doesn't survive a switch to a Gemini model
+    clearGeminiRateLimitCountdown();
+    getGroq().clearGroqRateLimitCountdown();
 
     const client = new GoogleGenAI({
         vertexai: false,
@@ -1264,6 +1275,7 @@ async function chatWithGeminiText(text, imageData = null) {
 module.exports = {
     initializeGeminiSession,
     chatWithGeminiText,
+    clearGeminiRateLimitCountdown,
     getEnabledTools,
     getStoredSetting,
     sendToRenderer,

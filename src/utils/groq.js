@@ -3,7 +3,7 @@ const { BrowserWindow, ipcMain } = require('electron');
 const https = require('https');
 const { URL } = require('url');
 const { getCondensedSystemPrompt, getSystemPrompt, getExamMessageHint } = require('./prompts');
-const { chatWithGeminiText } = require('./gemini');
+const { chatWithGeminiText, clearGeminiRateLimitCountdown } = require('./gemini');
 
 // Groq API configuration
 const GROQ_API_BASE = 'https://api.groq.com/openai/v1';
@@ -107,6 +107,18 @@ function scheduleRateLimitRecovery(statusMessage, recoveryMs = 30 * 1000) {
 }
 
 /**
+ * Clear any active Groq rate limit countdown.
+ * Also called from gemini.js on session init — quota is per model, so a stale Groq
+ * countdown must not keep overwriting the header after switching to a Gemini model.
+ */
+function clearGroqRateLimitCountdown() {
+    if (rateLimitCountdownInterval) {
+        clearInterval(rateLimitCountdownInterval);
+        rateLimitCountdownInterval = null;
+    }
+}
+
+/**
  * Parse the Groq 429 error response to determine rate limit type and extract the actual retry wait time.
  * Groq error messages contain "Please try again in XX.XXs" with the exact wait time.
  */
@@ -175,11 +187,10 @@ function initializeGroq(apiKey, customPrompt = '', profile = 'interview', langua
     selectedGroqModel = model;
     console.log(`[GROQ] Chat model set to: ${selectedGroqModel}`);
 
-    // Clear any active rate limit countdown from previous session
-    if (rateLimitCountdownInterval) {
-        clearInterval(rateLimitCountdownInterval);
-        rateLimitCountdownInterval = null;
-    }
+    // Clear any active rate limit countdown from previous session — BOTH providers,
+    // so a stale Gemini countdown doesn't survive a switch to Qwen (quota is per model)
+    clearGroqRateLimitCountdown();
+    clearGeminiRateLimitCountdown();
 
     // Exam mode: use the SAME full exam prompt the Gemini models follow (compact enough for Groq)
     // Interview mode: use CONDENSED prompt (high request rate, full interview prompt ~27KB is too heavy)
@@ -367,8 +378,9 @@ async function transcribeWithGroq(wavBuffer) {
 
 /**
  * Send chat completion request to Groq chat model (Qwen)
+ * maxTokensOverride: set by the 413 auto-retry to shrink max_tokens into the TPM window
  */
-async function chatWithGroq(userMessage, model = 'qwen-3.6-27b', imageData = null) {
+async function chatWithGroq(userMessage, model = 'qwen-3.6-27b', imageData = null, maxTokensOverride = null) {
     return new Promise((resolve, reject) => {
         if (!groqApiKey) {
             reject(new Error('Groq API key not initialized'));
@@ -413,10 +425,9 @@ async function chatWithGroq(userMessage, model = 'qwen-3.6-27b', imageData = nul
                 : { reasoning_effort: 'none' })
             : {};
 
-        // Exam mode: hidden thinking tokens count toward max_tokens — ensure room for reasoning + full answer
-        const effectiveMaxTokens = currentGroqMode === 'exam'
-            ? Math.max(generationSettings.maxOutputTokens, 8192)
-            : generationSettings.maxOutputTokens;
+        // Groq counts input tokens + max_tokens against the TPM limit (free tier: 8000 for Qwen),
+        // so max_tokens must stay modest — the 413 auto-retry below shrinks it further if needed
+        const effectiveMaxTokens = maxTokensOverride || generationSettings.maxOutputTokens;
 
         let requestBody = JSON.stringify({
             model: modelId,
@@ -553,6 +564,20 @@ async function chatWithGroq(userMessage, model = 'qwen-3.6-27b', imageData = nul
                             reject(new Error('Access Denied (Groq)'));
                         }
                     } else if (res.statusCode === 413) {
+                        // Groq's TPM 413 includes exact numbers: "Limit 8000, Requested 12271"
+                        // Retry ONCE with max_tokens shrunk to fit the remaining TPM window
+                        const tpmMatch = rawErrorBody.match(/Limit (\d+), Requested (\d+)/i);
+                        if (tpmMatch && maxTokensOverride === null) {
+                            const tpmLimit = parseInt(tpmMatch[1], 10);
+                            const requested = parseInt(tpmMatch[2], 10);
+                            const inputTokens = requested - effectiveMaxTokens;
+                            const reducedMax = tpmLimit - inputTokens - 256; // 256 token safety buffer
+                            if (reducedMax >= 512) {
+                                console.log(`[GROQ] TPM limit ${tpmLimit}, input ~${inputTokens} tokens — retrying with max_tokens ${reducedMax}`);
+                                resolve(chatWithGroq(userMessage, model, imageData, reducedMax));
+                                return;
+                            }
+                        }
                         sendToRenderer('update-status', 'Request too large');
                         reject(new Error('Request too large'));
                     } else if (res.statusCode === 400) {
@@ -1060,5 +1085,6 @@ module.exports = {
     getConversationHistory,
     setupGroqIpcHandlers,
     sendToRenderer,
+    clearGroqRateLimitCountdown,
     GROQ_CHAT_MODELS
 };

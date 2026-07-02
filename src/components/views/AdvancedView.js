@@ -550,10 +550,11 @@ export class AdvancedView extends LitElement {
             maxOutputTokens: 4096,
         },
         // Groq Qwen 3.6 27B - Exam/Coding mode (Qwen docs thinking mode, temp 0.6 for precise coding)
+        // maxOutputTokens kept low: Groq free tier TPM is 8000 and counts input (~4K with screenshot) + max_tokens
         'qwen-3.6-27b_coding': {
             temperature: 0.6,
             topP: 0.95,
-            maxOutputTokens: 8192,
+            maxOutputTokens: 3072,
         },
     };
 
