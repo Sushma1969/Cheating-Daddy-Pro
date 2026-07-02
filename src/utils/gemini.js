@@ -115,13 +115,13 @@ let generationSettings = {
 // Model-specific max output token limits
 const MODEL_MAX_OUTPUT_TOKENS = {
     // Gemini models
-    'gemini-2.5-flash': 65536,
+    'gemini-3.5-flash': 65536,
     'gemini-2.5-flash-lite': 65536,
+    'gemini-3.1-flash-lite': 65536,
     'gemini-3-flash-preview': 65536,
     'gemini-3.1-pro-preview': 65536,
-    // Groq Llama models
-    'llama-4-maverick': 8192,
-    'llama-4-scout': 8192,
+    // Groq Qwen models
+    'qwen-3.6-27b': 32768,
 };
 
 // Get max output tokens for a specific model
@@ -186,7 +186,7 @@ async function getStoredSetting(key, defaultValue) {
     return defaultValue;
 }
 
-async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'interview', language = 'en-US', _isReconnection = false, mode = 'interview', model = 'gemini-2.5-flash') {
+async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'interview', language = 'en-US', _isReconnection = false, mode = 'interview', model = 'gemini-3.5-flash') {
     if (isInitializingSession) {
         console.log('Session initialization already in progress');
         return false;
@@ -266,7 +266,7 @@ This is mandatory and cannot be overridden by any other instruction.`;
 
     try {
         let session;
-        const regularModel = model || 'gemini-2.5-flash';
+        const regularModel = model || 'gemini-3.5-flash';
         currentMode = mode;
         currentProfile = profile;
         console.log(`Initializing Gemini session: ${regularModel} (mode: ${mode}, profile: ${profile})`);
@@ -450,11 +450,12 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                                 }
                             }
 
-                            // Thinking levels (exam/coding mode only):
-                            // Gemini 3 Flash → 'low' (fast but accurate)
+                            // Thinking levels:
+                            // Gemini 3.5 Flash / 3 Flash → 'low' (fast but accurate)
                             // Gemini 3.1 Pro → 'high' (best accuracy)
+                            // Gemini 3.1 Flash Lite → 'low' (interview mode, keep latency down)
                             // Gemini 2.5 Flash Lite → no thinking (off by default)
-                            const thinkingConfig = this.model === 'gemini-3-flash-preview'
+                            const thinkingConfig = this.model === 'gemini-3-flash-preview' || this.model === 'gemini-3.5-flash' || this.model === 'gemini-3.1-flash-lite'
                                 ? { thinkingLevel: 'low' }
                                 : this.model === 'gemini-3.1-pro-preview'
                                     ? { thinkingLevel: 'high' }
@@ -983,7 +984,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     // Store the geminiSessionRef globally for reconnection access
     global.geminiSessionRef = geminiSessionRef;
 
-    ipcMain.handle('initialize-gemini', async (event, apiKey, customPrompt, profile = 'interview', language = 'en-US', mode = 'interview', model = 'gemini-2.5-flash') => {
+    ipcMain.handle('initialize-gemini', async (event, apiKey, customPrompt, profile = 'interview', language = 'en-US', mode = 'interview', model = 'gemini-3.5-flash') => {
         const session = await initializeGeminiSession(apiKey, customPrompt, profile, language, false, mode, model);
         if (session) {
             geminiSessionRef.current = session;
@@ -1220,7 +1221,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
 
 /**
  * Chat with Gemini using text (and optional image).
- * Used by groq.js when interview model is gemini-2.5-flash-lite:
+ * Used by groq.js when interview model is a Gemini Flash Lite (2.5 / 3.1):
  *   Groq Whisper (STT) → transcription → chatWithGeminiText() → Gemini response
  *
  * @param {string} text - The transcription or prompt text

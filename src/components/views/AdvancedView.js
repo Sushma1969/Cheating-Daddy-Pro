@@ -486,27 +486,33 @@ export class AdvancedView extends LitElement {
     // Model-specific max output token limits (maximum allowed)
     static MODEL_MAX_TOKENS = {
         // Gemini models
-        'gemini-2.5-flash': 65536,
+        'gemini-3.5-flash': 65536,
         'gemini-2.5-flash-lite': 65536,
+        'gemini-3.1-flash-lite': 65536,
         'gemini-3-flash-preview': 65536,
         'gemini-3.1-pro-preview': 65536,
-        // Groq Llama models
-        'llama-4-maverick': 8192,
-        'llama-4-scout': 8192,
+        // Groq Qwen models
+        'qwen-3.6-27b': 32768,
     };
 
     // Model-specific default settings based on 2025/2026 documentation
     // Keys use "model_mode" format for models that work in multiple modes
     // Interview: concise answers, lower tokens | Exam/Coding: detailed code, higher tokens
     static MODEL_DEFAULTS = {
-        // Gemini 2.5 Flash - Exam/Coding mode only
-        'gemini-2.5-flash_coding': {
-            temperature: 0.5,
+        // Gemini 3.5 Flash - Exam/Coding mode (newest flagship, Gemini 3 family works best at temp 1.0)
+        'gemini-3.5-flash_coding': {
+            temperature: 1.0,
             topP: 0.95,
             maxOutputTokens: 8192,
         },
         // Gemini 2.5 Flash Lite - Interview mode (fastest, no thinking by default)
         'gemini-2.5-flash-lite_interview': {
+            temperature: 0.7,
+            topP: 0.9,
+            maxOutputTokens: 1024,
+        },
+        // Gemini 3.1 Flash Lite - Interview mode (newer lite, low thinking for latency)
+        'gemini-3.1-flash-lite_interview': {
             temperature: 0.7,
             topP: 0.9,
             maxOutputTokens: 1024,
@@ -523,16 +529,10 @@ export class AdvancedView extends LitElement {
             topP: 0.95,
             maxOutputTokens: 16384,
         },
-        // Groq Llama 4 Maverick - Interview mode (balanced, enough for code + explanation)
-        'llama-4-maverick_interview': {
+        // Groq Qwen 3.6 27B - Interview mode (Groq/Qwen recommended non-thinking settings: temp 0.7, topP 0.8)
+        'qwen-3.6-27b_interview': {
             temperature: 0.7,
-            topP: 0.95,
-            maxOutputTokens: 4096,
-        },
-        // Groq Llama 4 Scout - Interview mode (balanced, enough for code + explanation)
-        'llama-4-scout_interview': {
-            temperature: 0.7,
-            topP: 0.95,
+            topP: 0.8,
             maxOutputTokens: 4096,
         },
     };
@@ -552,7 +552,7 @@ export class AdvancedView extends LitElement {
         this.contentProtection = true;
 
         // Model generation defaults (model-specific values)
-        this.selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
+        this.selectedModel = localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
         this.temperature = this.getDefaultTemperature();
         this.topP = this.getDefaultTopP();
         this.maxOutputTokens = this.getDefaultMaxTokens();
@@ -600,12 +600,12 @@ export class AdvancedView extends LitElement {
     // Get display name for the current model
     getModelDisplayName() {
         const modelNames = {
-            'gemini-2.5-flash': 'Gemini 2.5 Flash',
+            'gemini-3.5-flash': 'Gemini 3.5 Flash',
             'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
+            'gemini-3.1-flash-lite': 'Gemini 3.1 Flash Lite',
             'gemini-3-flash-preview': 'Gemini 3.0 Flash',
             'gemini-3.1-pro-preview': 'Gemini 3.1 Pro',
-            'llama-4-maverick': 'Llama 4 Maverick',
-            'llama-4-scout': 'Llama 4 Scout',
+            'qwen-3.6-27b': 'Qwen 3.6 27B',
         };
         return modelNames[this.selectedModel] || this.selectedModel;
     }
@@ -615,14 +615,14 @@ export class AdvancedView extends LitElement {
         return this.getCurrentMode() === 'coding';
     }
 
-    // Check if current model is a Groq Llama model
+    // Check if current model is a Groq model (Qwen)
     isGroqModel() {
-        return this.selectedModel === 'llama-4-maverick' || this.selectedModel === 'llama-4-scout';
+        return this.selectedModel === 'qwen-3.6-27b';
     }
 
     // Get provider name for display
     getProviderName() {
-        return this.isGroqModel() ? 'Groq Llama' : 'Gemini';
+        return this.isGroqModel() ? 'Groq Qwen' : 'Gemini';
     }
 
     connectedCallback() {
@@ -632,7 +632,7 @@ export class AdvancedView extends LitElement {
 
         // Always re-read selected model from localStorage when component connects
         // This ensures we have the latest model after navigating from CustomizeView
-        const currentModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
+        const currentModel = localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
         if (currentModel !== this.selectedModel) {
             this.selectedModel = currentModel;
             // Load this model's saved settings (or defaults if none saved)
@@ -644,7 +644,7 @@ export class AdvancedView extends LitElement {
 
         // Listen for model changes from CustomizeView (same window)
         this.modelChangeHandler = (e) => {
-            const newModel = e.detail?.model || 'llama-4-maverick';
+            const newModel = e.detail?.model || 'qwen-3.6-27b';
             if (newModel !== this.selectedModel) {
                 this.selectedModel = newModel;
                 // Load this model's saved settings (preserves custom values per model)
@@ -658,7 +658,7 @@ export class AdvancedView extends LitElement {
         // Listen for model changes from other windows/tabs
         this.storageHandler = (e) => {
             if (e.key === 'selectedModel') {
-                const newModel = e.newValue || 'llama-4-maverick';
+                const newModel = e.newValue || 'qwen-3.6-27b';
                 if (newModel !== this.selectedModel) {
                     this.selectedModel = newModel;
                     // Load this model's saved settings (preserves custom values per model)

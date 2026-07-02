@@ -3,8 +3,8 @@
  *
  * This test suite verifies that all supported languages in the app are:
  * 1. Properly mapped in groq.js languageMap
- * 2. System prompt includes correct language instruction for Llama models
- * 3. Tests language support for Llama 4 Maverick and Scout models
+ * 2. System prompt includes correct language instruction for Groq chat models
+ * 3. Tests language support for the Qwen 3.6 27B model
  *
  * Uses real interview questions to validate language detection patterns
  */
@@ -45,10 +45,9 @@ const SUPPORTED_LANGUAGES = [
     { code: 'th-TH', name: 'Thai (Thailand)', nativeName: 'ไทย', expectedLanguage: 'Thai' },
 ];
 
-// Available Groq Llama models
-const GROQ_LLAMA_MODELS = {
-    'llama-4-maverick': 'meta-llama/llama-4-maverick-17b-128e-instruct',
-    'llama-4-scout': 'meta-llama/llama-4-scout-17b-16e-instruct'
+// Available Groq chat models (should match GROQ_CHAT_MODELS in groq.js)
+const GROQ_CHAT_MODELS = {
+    'qwen-3.6-27b': 'qwen/qwen3.6-27b'
 };
 
 // The languageMap from groq.js (should match exactly)
@@ -213,26 +212,16 @@ YOU MUST respond ONLY in ${selectedLanguageName}, regardless of what language th
         });
     });
 
-    describe('Groq Llama Model Support', () => {
-        it('should have both Llama 4 models configured', () => {
-            expect(GROQ_LLAMA_MODELS).toHaveProperty('llama-4-maverick');
-            expect(GROQ_LLAMA_MODELS).toHaveProperty('llama-4-scout');
+    describe('Groq Chat Model Support', () => {
+        it('should have the Qwen model configured', () => {
+            expect(GROQ_CHAT_MODELS).toHaveProperty('qwen-3.6-27b');
         });
 
-        it('should have correct model IDs for Llama models', () => {
-            expect(GROQ_LLAMA_MODELS['llama-4-maverick']).toBe('meta-llama/llama-4-maverick-17b-128e-instruct');
-            expect(GROQ_LLAMA_MODELS['llama-4-scout']).toBe('meta-llama/llama-4-scout-17b-16e-instruct');
+        it('should have correct model ID for the Qwen model', () => {
+            expect(GROQ_CHAT_MODELS['qwen-3.6-27b']).toBe('qwen/qwen3.6-27b');
         });
 
-        it('should support all languages for Llama 4 Maverick', () => {
-            for (const lang of SUPPORTED_LANGUAGES) {
-                const mappedLanguage = GROQ_LANGUAGE_MAP[lang.code];
-                expect(mappedLanguage).toBeDefined();
-                expect(mappedLanguage).toBe(lang.expectedLanguage);
-            }
-        });
-
-        it('should support all languages for Llama 4 Scout', () => {
+        it('should support all languages for Qwen 3.6 27B', () => {
             for (const lang of SUPPORTED_LANGUAGES) {
                 const mappedLanguage = GROQ_LANGUAGE_MAP[lang.code];
                 expect(mappedLanguage).toBeDefined();
@@ -565,9 +554,8 @@ describe('Groq Language Support Summary', () => {
         }
 
         console.log('\n====================================================\n');
-        console.log('Supported Llama Models:');
-        console.log(`  - Llama 4 Maverick: ${GROQ_LLAMA_MODELS['llama-4-maverick']}`);
-        console.log(`  - Llama 4 Scout: ${GROQ_LLAMA_MODELS['llama-4-scout']}`);
+        console.log('Supported Groq Chat Models:');
+        console.log(`  - Qwen 3.6 27B: ${GROQ_CHAT_MODELS['qwen-3.6-27b']}`);
         console.log('\n====================================================\n');
 
         expect(allPassed).toBe(true);

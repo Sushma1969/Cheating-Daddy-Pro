@@ -13,8 +13,8 @@ A real-time AI assistant that provides contextual help during video calls, inter
 ### AI & Model Features
 - **Dual Mode Support**: Interview Mode (with live audio) & Exam Assistant Mode 
 - **Multi-Model Support**:
-  - **Gemini Models**: Gemini 2.5 Flash Lite, Gemini 2.5 Flash, Gemini 3 Flash Preview and Gemini 3 Pro Preview.
-  - **Groq Llama Models**: Llama 4 Maverick, Llama 4 Scout (for interview mode)
+  - **Gemini Models**: Gemini 2.5 Flash Lite, Gemini 3.1 Flash Lite, Gemini 3.5 Flash, Gemini 3 Flash Preview and Gemini 3.1 Pro Preview.
+  - **Groq Qwen Model**: Qwen 3.6 27B with vision support (for interview mode)
 - **Model Generation Settings**: Customize Temperature, Top P, and Max Output Tokens per model
 - **Per-Model Settings Persistence**: Your custom settings are saved separately for each model
 - **Model-Specific Defaults**: Optimized default values based on 2025/2026 documentation
@@ -47,7 +47,7 @@ A real-time AI assistant that provides contextual help during video calls, inter
 
 1. **Get API Keys**:
    - **Gemini API Key**: Visit [Google AI Studio](https://aistudio.google.com/apikey)
-   - **Groq API Key**: Visit [Groq Console](https://console.groq.com/keys) for Llama models
+   - **Groq API Key**: Visit [Groq Console](https://console.groq.com/keys) for Whisper STT + Qwen model
 2. **Install Dependencies**: `npm install`
 3. **Run the App**: `npm start`
 
@@ -55,11 +55,11 @@ A real-time AI assistant that provides contextual help during video calls, inter
 
 1. Enter your API keys in the main window:
    - Gemini API key for Gemini models
-   - Groq API key for Llama 4 Maverick/Scout models
+   - Groq API key for Qwen 3.6 27B model (and Whisper STT)
 2. Choose your profile and language in settings
 3. Select your preferred model:
-   - **Interview Mode**: Gemini 2.5 Flash Lite or Groq Llama Maverick & Scout model.
-   - **Exam Mode**: Gemini 2.5 Flash, Gemini 3 Flash Preview and Gemini 3 Pro Preview.
+   - **Interview Mode**: Gemini 2.5 Flash Lite, Gemini 3.1 Flash Lite or Groq Qwen 3.6 27B model.
+   - **Exam Mode**: Gemini 3.5 Flash, Gemini 3 Flash Preview and Gemini 3.1 Pro Preview.
 4. Select your preferred VAD mode (Automatic or Manual) in Interview Mode.
 5. Click "Start Session" to begin.
 6. Position the window using keyboard shortcuts.

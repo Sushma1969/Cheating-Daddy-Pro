@@ -502,7 +502,7 @@ export class CustomizeView extends LitElement {
 
         // Mode and model selection defaults
         this.selectedMode = 'interview';
-        this.selectedModel = 'llama-4-maverick';
+        this.selectedModel = 'qwen-3.6-27b';
 
         this.loadKeybinds();
         this.loadGoogleSearchSettings();
@@ -629,12 +629,12 @@ export class CustomizeView extends LitElement {
             localStorage.setItem('selectedMode', 'coding');
 
             // Restore last-used coding model, or validate current one
-            const validCodingModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3.1-pro-preview'];
+            const validCodingModels = ['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-3.1-pro-preview'];
             const lastCodingModel = localStorage.getItem('lastModel_coding');
             if (lastCodingModel && validCodingModels.includes(lastCodingModel)) {
                 this.selectedModel = lastCodingModel;
             } else if (!validCodingModels.includes(this.selectedModel)) {
-                this.selectedModel = 'gemini-2.5-flash';
+                this.selectedModel = 'gemini-3.5-flash';
             }
         } else {
             // Save current model for coding mode before switching
@@ -646,12 +646,12 @@ export class CustomizeView extends LitElement {
             localStorage.setItem('selectedMode', 'interview');
 
             // Restore last-used interview model, or validate current one
-            const validInterviewModels = ['gemini-2.5-flash-lite', 'llama-4-maverick', 'llama-4-scout'];
+            const validInterviewModels = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'qwen-3.6-27b'];
             const lastInterviewModel = localStorage.getItem('lastModel_interview');
             if (lastInterviewModel && validInterviewModels.includes(lastInterviewModel)) {
                 this.selectedModel = lastInterviewModel;
             } else if (!validInterviewModels.includes(this.selectedModel)) {
-                this.selectedModel = 'llama-4-maverick';
+                this.selectedModel = 'qwen-3.6-27b';
             }
         }
 
@@ -1092,27 +1092,27 @@ export class CustomizeView extends LitElement {
         const selectedModel = localStorage.getItem('selectedModel');
 
         this.selectedMode = selectedMode || 'interview';
-        this.selectedModel = selectedModel || 'llama-4-maverick';
+        this.selectedModel = selectedModel || 'qwen-3.6-27b';
 
         // Validate stored model is valid for the current mode
         if (this.selectedMode === 'interview') {
-            const validInterviewModels = ['gemini-2.5-flash-lite', 'llama-4-maverick', 'llama-4-scout'];
+            const validInterviewModels = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'qwen-3.6-27b'];
             if (!validInterviewModels.includes(this.selectedModel)) {
-                this.selectedModel = 'llama-4-maverick';
+                this.selectedModel = 'qwen-3.6-27b';
                 localStorage.setItem('selectedModel', this.selectedModel);
             }
         } else {
-            const validCodingModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3.1-pro-preview'];
+            const validCodingModels = ['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-3.1-pro-preview'];
             if (!validCodingModels.includes(this.selectedModel)) {
-                this.selectedModel = 'gemini-2.5-flash';
+                this.selectedModel = 'gemini-3.5-flash';
                 localStorage.setItem('selectedModel', this.selectedModel);
             }
         }
     }
 
-    // Helper to check if selected model is a Groq/Llama model
+    // Helper to check if selected model is a Groq model (Qwen)
     isGroqModel(model) {
-        return model && (model.includes('llama') || model.includes('groq'));
+        return model && (model.includes('qwen') || model.includes('groq'));
     }
 
     async handleModeChange(e) {
@@ -1125,18 +1125,18 @@ export class CustomizeView extends LitElement {
             // Save current model for coding mode before switching
             localStorage.setItem('lastModel_coding', this.selectedModel);
 
-            const validInterviewModels = ['gemini-2.5-flash-lite', 'llama-4-maverick', 'llama-4-scout'];
+            const validInterviewModels = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'qwen-3.6-27b'];
             const lastInterviewModel = localStorage.getItem('lastModel_interview');
             if (lastInterviewModel && validInterviewModels.includes(lastInterviewModel)) {
                 this.selectedModel = lastInterviewModel;
             } else if (!validInterviewModels.includes(this.selectedModel)) {
-                this.selectedModel = 'llama-4-maverick';
+                this.selectedModel = 'qwen-3.6-27b';
             }
         } else {
             // Save current model for interview mode before switching
             localStorage.setItem('lastModel_interview', this.selectedModel);
 
-            const validCodingModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3.1-pro-preview'];
+            const validCodingModels = ['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-3.1-pro-preview'];
             const lastCodingModel = localStorage.getItem('lastModel_coding');
             if (lastCodingModel && validCodingModels.includes(lastCodingModel)) {
                 this.selectedModel = lastCodingModel;
@@ -1236,15 +1236,15 @@ export class CustomizeView extends LitElement {
                                     <custom-dropdown
                                         .value=${this.selectedModel}
                                         .options=${[
-                                            { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Faster, Balanced)', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
+                                            { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash (Newest, Fast & Smart)', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
                                             { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview (Fast, Smart)', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
                                             { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview (Slower, Most Accurate)', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' }
                                         ]}
                                         @change=${e => this.handleModelChange({ target: { value: e.detail.value } })}
                                     ></custom-dropdown>
                                     <div class="form-description">
-                                        ${this.selectedModel === 'gemini-2.5-flash'
-                                            ? 'Gemini 2.5 Flash: Faster responses, good for time-sensitive coding assessments.'
+                                        ${this.selectedModel === 'gemini-3.5-flash'
+                                            ? 'Gemini 3.5 Flash: Newest flagship model. Frontier intelligence at Flash speed, best all-rounder for assessments.'
                                             : this.selectedModel === 'gemini-3-flash-preview'
                                                 ? 'Gemini 3 Flash Preview: Pro-level intelligence at Flash speed. Low thinking for fastest responses.'
                                                 : 'Gemini 3 Pro Preview: Most accurate and detailed responses, better for complex problems.'}
@@ -1270,12 +1270,12 @@ export class CustomizeView extends LitElement {
                                         .value=${this.selectedModel}
                                         .options=${[
                                             { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
-                                            { value: 'llama-4-maverick', label: 'Llama 4 Maverick 17B', icon: './assets/models/metalogo.dcf881ba.svg' },
-                                            { value: 'llama-4-scout', label: 'Llama 4 Scout 17B', icon: './assets/models/metalogo.dcf881ba.svg' }
+                                            { value: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
+                                            { value: 'qwen-3.6-27b', label: 'Qwen 3.6 27B', icon: './assets/models/qwen_logo.webp' }
                                         ]}
                                         @change=${e => this.handleModelChange({ target: { value: e.detail.value } })}
                                     ></custom-dropdown>
-                                    <div class="form-description">${this.selectedModel === 'gemini-2.5-flash-lite' ? 'Groq Whisper STT + Gemini 2.5 Flash Lite for fast responses. Requires both Groq and Gemini API keys.' : this.selectedModel === 'llama-4-maverick' ? 'Groq Whisper STT + Llama 4 Maverick for fast interview responses. Requires Groq API key.' : 'Groq Whisper STT + Llama 4 Scout for efficient interview responses. Requires Groq API key.'}</div>
+                                    <div class="form-description">${this.selectedModel === 'gemini-2.5-flash-lite' ? 'Groq Whisper STT + Gemini 2.5 Flash Lite for fast responses. Requires both Groq and Gemini API keys.' : this.selectedModel === 'gemini-3.1-flash-lite' ? 'Groq Whisper STT + Gemini 3.1 Flash Lite (newer, sharper) for fast responses. Requires both Groq and Gemini API keys.' : 'Groq Whisper STT + Qwen 3.6 27B for fast interview responses with vision support. Requires Groq API key.'}</div>
                                 </div>
                             </div>
                         `}

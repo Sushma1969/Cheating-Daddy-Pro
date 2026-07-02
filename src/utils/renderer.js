@@ -166,10 +166,10 @@ function arrayBufferToBase64(buffer) {
     return btoa(binary);
 }
 
-async function initializeGemini(profile = 'interview', language = 'en-US', mode = 'interview', model = 'llama-4-maverick') {
+async function initializeGemini(profile = 'interview', language = 'en-US', mode = 'interview', model = 'qwen-3.6-27b') {
     // Get mode and model from localStorage if not provided
     const selectedMode = mode || localStorage.getItem('selectedMode') || 'interview';
-    const selectedModel = model || localStorage.getItem('selectedModel') || 'llama-4-maverick';
+    const selectedModel = model || localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
 
     if (selectedMode === 'interview') {
         // ALL interview models use Groq Whisper for STT
@@ -187,8 +187,8 @@ async function initializeGemini(profile = 'interview', language = 'en-US', mode 
             return;
         }
 
-        // If Gemini model, also initialize Gemini for text generation + screenshots
-        if (selectedModel === 'gemini-2.5-flash-lite') {
+        // If Gemini model (Flash Lite 2.5 / 3.1), also initialize Gemini for text generation + screenshots
+        if (selectedModel.startsWith('gemini-')) {
             const apiKey = localStorage.getItem('apiKey')?.trim();
             if (apiKey) {
                 const success = await ipcRenderer.invoke('initialize-gemini', apiKey, localStorage.getItem('customPrompt') || '', profile, language, selectedMode, selectedModel);
@@ -401,7 +401,7 @@ function setupLinuxSystemAudioProcessing() {
 
     // All interview mode audio goes to Groq Whisper for STT
     const selectedMode = localStorage.getItem('selectedMode') || 'interview';
-    const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
+    const selectedModel = localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
     const useGroqForSTT = selectedMode === 'interview';
 
     console.log(`[AUDIO] Mode: ${selectedMode}, Model: ${selectedModel}, Using Groq: ${useGroqForSTT}`);
@@ -517,7 +517,7 @@ function setupWindowsLoopbackProcessing() {
 
     // All interview mode audio goes to Groq Whisper for STT
     const selectedMode = localStorage.getItem('selectedMode') || 'interview';
-    const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
+    const selectedModel = localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
     const useGroqForSTT = selectedMode === 'interview';
 
     console.log(`[AUDIO] Mode: ${selectedMode}, Model: ${selectedModel}, Using Groq: ${useGroqForSTT}`);
@@ -712,9 +712,9 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
                 }
 
                 // All interview mode manual screenshots go through Groq handler
-                // (groq.js internally routes to Gemini for gemini-2.5-flash-lite)
+                // (groq.js internally routes to Gemini for the Flash Lite models)
                 const selectedMode = localStorage.getItem('selectedMode') || 'interview';
-                const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
+                const selectedModel = localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
                 const selectedProfile = localStorage.getItem('selectedProfile') || 'interview';
                 const useGroq = selectedMode === 'interview' && captureIsManual;
 
@@ -905,9 +905,9 @@ async function sendTextMessage(text) {
         });
 
         // All interview mode screenshots go through Groq handler
-        // (groq.js internally routes to Gemini for gemini-2.5-flash-lite)
+        // (groq.js internally routes to Gemini for the Flash Lite models)
         const selectedMode = localStorage.getItem('selectedMode') || 'interview';
-        const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
+        const selectedModel = localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
         const useGroq = selectedMode === 'interview';
 
         let result;

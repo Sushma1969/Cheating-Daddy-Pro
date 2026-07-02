@@ -1,4 +1,4 @@
-// groq.js - Groq API integration for Speech-to-Text (Whisper) and Chat Completion (Llama models)
+// groq.js - Groq API integration for Speech-to-Text (Whisper) and Chat Completion (Qwen models)
 const { BrowserWindow, ipcMain } = require('electron');
 const https = require('https');
 const { URL } = require('url');
@@ -9,10 +9,11 @@ const { chatWithGeminiText } = require('./gemini');
 const GROQ_API_BASE = 'https://api.groq.com/openai/v1';
 const WHISPER_MODEL = 'whisper-large-v3-turbo';
 
-// Available Llama models for chat completion
-const LLAMA_MODELS = {
-    'llama-4-maverick': 'meta-llama/llama-4-maverick-17b-128e-instruct',
-    'llama-4-scout': 'meta-llama/llama-4-scout-17b-16e-instruct'
+// Available Groq models for chat completion
+// Qwen 3.6 27B replaced Llama 4 Maverick/Scout (both deprecated by Groq in 2026)
+// It's the only vision-capable Groq model, needed for screenshot analysis (max 3 images/request)
+const GROQ_CHAT_MODELS = {
+    'qwen-3.6-27b': 'qwen/qwen3.6-27b'
 };
 
 // Audio buffer for accumulating audio chunks before sending to Groq
@@ -48,7 +49,7 @@ let checkTimer = null;
 const CHECK_INTERVAL_MS = 500; // Check every 500ms for faster response
 
 // Store selected model for chat completion
-let selectedLlamaModel = 'llama-4-maverick';
+let selectedGroqModel = 'qwen-3.6-27b';
 
 // Rate limit countdown - auto-reset status after 429 errors with live countdown in header
 let rateLimitCountdownInterval = null;
@@ -165,11 +166,11 @@ function calculateRMS(pcmBuffer) {
 /**
  * Initialize Groq API with the provided API key
  */
-function initializeGroq(apiKey, customPrompt = '', profile = 'interview', language = 'en-US', model = 'llama-4-maverick') {
+function initializeGroq(apiKey, customPrompt = '', profile = 'interview', language = 'en-US', model = 'qwen-3.6-27b') {
     groqApiKey = apiKey;
     conversationHistory = [];
-    selectedLlamaModel = model;
-    console.log(`[GROQ] Chat model set to: ${selectedLlamaModel}`);
+    selectedGroqModel = model;
+    console.log(`[GROQ] Chat model set to: ${selectedGroqModel}`);
 
     // Clear any active rate limit countdown from previous session
     if (rateLimitCountdownInterval) {
@@ -357,16 +358,17 @@ async function transcribeWithGroq(wavBuffer) {
 }
 
 /**
- * Send chat completion request to Groq Llama model
+ * Send chat completion request to Groq chat model (Qwen)
  */
-async function chatWithLlama(userMessage, model = 'llama-4-maverick', imageData = null) {
+async function chatWithGroq(userMessage, model = 'qwen-3.6-27b', imageData = null) {
     return new Promise((resolve, reject) => {
         if (!groqApiKey) {
             reject(new Error('Groq API key not initialized'));
             return;
         }
 
-        const modelId = LLAMA_MODELS[model] || LLAMA_MODELS['llama-4-maverick'];
+        const modelId = GROQ_CHAT_MODELS[model] || GROQ_CHAT_MODELS['qwen-3.6-27b'];
+        const isQwen = modelId.startsWith('qwen/');
 
         // Build messages array with conversation history
         const messages = [
@@ -393,13 +395,18 @@ async function chatWithLlama(userMessage, model = 'llama-4-maverick', imageData 
             messages.push({ role: 'user', content: userMessage });
         }
 
+        // Qwen 3.6 dual-mode reasoning: disable thinking for low-latency interview replies
+        // (Groq's recommended non-thinking sampling is set via AdvancedView defaults)
+        const qwenParams = isQwen ? { reasoning_effort: 'none' } : {};
+
         let requestBody = JSON.stringify({
             model: modelId,
             messages: messages,
             temperature: generationSettings.temperature,
             top_p: generationSettings.topP,
             max_tokens: generationSettings.maxOutputTokens,
-            stream: true
+            stream: true,
+            ...qwenParams
         });
 
         // Log request size for debugging
@@ -436,7 +443,8 @@ async function chatWithLlama(userMessage, model = 'llama-4-maverick', imageData 
                 temperature: generationSettings.temperature,
                 top_p: generationSettings.topP,
                 max_tokens: generationSettings.maxOutputTokens,
-                stream: true
+                stream: true,
+                ...qwenParams
             });
             requestSizeKB = (Buffer.byteLength(requestBody) / 1024).toFixed(1);
             console.log(`[GROQ] Trimmed request size: ${requestSizeKB}KB`);
@@ -488,7 +496,7 @@ async function chatWithLlama(userMessage, model = 'llama-4-maverick', imageData 
 
             res.on('end', () => {
                 if (res.statusCode === 200 && responseText) {
-                    console.log(`[GROQ LLAMA] Response: ${responseText.length} chars`);
+                    console.log(`[GROQ CHAT] Response: ${responseText.length} chars`);
 
                     // Save to conversation history
                     conversationHistory.push({
@@ -653,7 +661,7 @@ async function checkAndFlush() {
 }
 
 /**
- * Process accumulated audio buffer: transcribe with Whisper, then send to Llama
+ * Process accumulated audio buffer: transcribe with Whisper, then send to chat model
  */
 async function processAudioBuffer(model = null) {
     if (isProcessing || speechBuffer.length === 0) {
@@ -661,7 +669,7 @@ async function processAudioBuffer(model = null) {
     }
 
     // Use provided model or stored model
-    const chatModel = model || selectedLlamaModel;
+    const chatModel = model || selectedGroqModel;
 
     // Calculate total duration
     const totalBytes = speechBuffer.reduce((sum, buf) => sum + buf.length, 0);
@@ -710,10 +718,11 @@ async function processAudioBuffer(model = null) {
 
         // Step 2: Send transcription to chat model for response
         let response;
-        if (chatModel === 'gemini-2.5-flash-lite') {
+        if (chatModel.startsWith('gemini-')) {
+            // Gemini Flash Lite models (2.5 / 3.1) route to Gemini for text generation
             response = await chatWithGeminiText(transcription);
         } else {
-            response = await chatWithLlama(transcription, chatModel);
+            response = await chatWithGroq(transcription, chatModel);
         }
 
         // Reset speech tracking state
@@ -762,7 +771,7 @@ async function flushAudioBuffer(model = null) {
     }
 
     // Use provided model or stored model
-    const chatModel = model || selectedLlamaModel;
+    const chatModel = model || selectedGroqModel;
 
     isProcessing = true;
     sendToRenderer('update-status', 'Transcribing...');
@@ -788,10 +797,11 @@ async function flushAudioBuffer(model = null) {
 
         // Send transcription to chat model for response
         let response;
-        if (chatModel === 'gemini-2.5-flash-lite') {
+        if (chatModel.startsWith('gemini-')) {
+            // Gemini Flash Lite models (2.5 / 3.1) route to Gemini for text generation
             response = await chatWithGeminiText(transcription);
         } else {
-            response = await chatWithLlama(transcription, chatModel);
+            response = await chatWithGroq(transcription, chatModel);
         }
 
         // Reset state
@@ -812,9 +822,9 @@ async function flushAudioBuffer(model = null) {
 }
 
 /**
- * Send screenshot + text to Llama for analysis
+ * Send screenshot + text to chat model for analysis
  */
-async function analyzeWithLlama(text, imageData, model = 'llama-4-maverick') {
+async function analyzeWithGroq(text, imageData, model = 'qwen-3.6-27b') {
     if (!groqApiKey) {
         console.error('[GROQ] No API key initialized');
         sendToRenderer('update-status', 'No API Key Found');
@@ -832,11 +842,11 @@ async function analyzeWithLlama(text, imageData, model = 'llama-4-maverick') {
         }
 
         let response;
-        if (model === 'gemini-2.5-flash-lite') {
-            // Route to Gemini for screenshot analysis
+        if (model.startsWith('gemini-')) {
+            // Route to Gemini for screenshot analysis (Flash Lite 2.5 / 3.1)
             response = await chatWithGeminiText(finalText, imageData);
         } else {
-            response = await chatWithLlama(finalText, model, imageData);
+            response = await chatWithGroq(finalText, model, imageData);
         }
         // Status will be set to 'Listening...' / 'Ready' by the respective handler
         return response;
@@ -914,7 +924,7 @@ function updateGenerationSettings(settings) {
  * Setup IPC handlers for Groq
  */
 function setupGroqIpcHandlers() {
-    ipcMain.handle('initialize-groq', async (event, apiKey, customPrompt = '', profile = 'interview', language = 'en-US', model = 'llama-4-maverick') => {
+    ipcMain.handle('initialize-groq', async (event, apiKey, customPrompt = '', profile = 'interview', language = 'en-US', model = 'qwen-3.6-27b') => {
         try {
             initializeGroq(apiKey, customPrompt, profile, language, model);
             return { success: true };
@@ -935,9 +945,9 @@ function setupGroqIpcHandlers() {
         }
     });
 
-    ipcMain.handle('groq-process-audio', async (event, model = 'llama-4-maverick') => {
+    ipcMain.handle('groq-process-audio', async (event, model = 'qwen-3.6-27b') => {
         try {
-            selectedLlamaModel = model;
+            selectedGroqModel = model;
             const result = await processAudioBuffer(model);
             return { success: true, result };
         } catch (error) {
@@ -946,9 +956,9 @@ function setupGroqIpcHandlers() {
         }
     });
 
-    ipcMain.handle('groq-flush-audio', async (event, model = 'llama-4-maverick') => {
+    ipcMain.handle('groq-flush-audio', async (event, model = 'qwen-3.6-27b') => {
         try {
-            selectedLlamaModel = model;
+            selectedGroqModel = model;
             const result = await flushAudioBuffer(model);
             return { success: true, result };
         } catch (error) {
@@ -969,7 +979,7 @@ function setupGroqIpcHandlers() {
             if (storedLanguageName !== 'English') {
                 finalMessage = `${message} (Remember: Respond in ${storedLanguageName})`;
             }
-            const response = await chatWithLlama(finalMessage, model, imageData);
+            const response = await chatWithGroq(finalMessage, model, imageData);
             return { success: true, response };
         } catch (error) {
             console.error('[GROQ] Chat error:', error);
@@ -979,7 +989,7 @@ function setupGroqIpcHandlers() {
 
     ipcMain.handle('groq-analyze-image', async (event, { text, imageData, model }) => {
         try {
-            const response = await analyzeWithLlama(text, imageData, model);
+            const response = await analyzeWithGroq(text, imageData, model);
             return { success: true, response };
         } catch (error) {
             console.error('[GROQ] Analyze image error:', error);
@@ -1013,8 +1023,8 @@ module.exports = {
     initializeGroq,
     pcmToWav,
     transcribeWithGroq,
-    chatWithLlama,
-    analyzeWithLlama,
+    chatWithGroq,
+    analyzeWithGroq,
     addAudioChunk,
     processAudioBuffer,
     flushAudioBuffer,
@@ -1026,5 +1036,5 @@ module.exports = {
     getConversationHistory,
     setupGroqIpcHandlers,
     sendToRenderer,
-    LLAMA_MODELS
+    GROQ_CHAT_MODELS
 };
