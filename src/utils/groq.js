@@ -379,8 +379,9 @@ async function transcribeWithGroq(wavBuffer) {
 /**
  * Send chat completion request to Groq chat model (Qwen)
  * maxTokensOverride: set by the 413 auto-retry to shrink max_tokens into the TPM window
+ * forceNoThink: set by the empty-answer retry when thinking consumed the whole token budget
  */
-async function chatWithGroq(userMessage, model = 'qwen-3.6-27b', imageData = null, maxTokensOverride = null) {
+async function chatWithGroq(userMessage, model = 'qwen-3.6-27b', imageData = null, maxTokensOverride = null, forceNoThink = false) {
     return new Promise((resolve, reject) => {
         if (!groqApiKey) {
             reject(new Error('Groq API key not initialized'));
@@ -417,11 +418,12 @@ async function chatWithGroq(userMessage, model = 'qwen-3.6-27b', imageData = nul
 
         // Qwen 3.6 dual-mode reasoning (per Groq/Qwen docs):
         // Interview → thinking OFF ('none') for low-latency replies
-        // Exam → thinking ON ('default') for accuracy; 'hidden' keeps reasoning out of the response
+        // Exam → thinking ON ('default'); 'parsed' streams reasoning in a separate delta.reasoning
+        // field so we can show "Thinking..." progress while keeping it out of the response
         // (Mode-specific sampling temps are set via AdvancedView defaults)
         const qwenParams = isQwen
-            ? (currentGroqMode === 'exam'
-                ? { reasoning_effort: 'default', reasoning_format: 'hidden' }
+            ? (currentGroqMode === 'exam' && !forceNoThink
+                ? { reasoning_effort: 'default', reasoning_format: 'parsed' }
                 : { reasoning_effort: 'none' })
             : {};
 
@@ -496,26 +498,55 @@ async function chatWithGroq(userMessage, model = 'qwen-3.6-27b', imageData = nul
 
         let responseText = '';
         let rawErrorBody = '';
+        let sseBuffer = ''; // SSE lines can split across TCP chunks — buffer incomplete lines
+        let reasoningChars = 0;
+        let thinkingStatusSent = false;
+        let firstTokenLogged = false;
+        const requestStartTime = Date.now();
+        let lastActivityTime = Date.now();
 
         const req = https.request(options, (res) => {
             res.on('data', (chunk) => {
+                lastActivityTime = Date.now();
                 if (res.statusCode !== 200) {
                     // Accumulate error response body for detailed error messages
                     rawErrorBody += chunk.toString();
                     return;
                 }
-                const lines = chunk.toString().split('\n');
+                sseBuffer += chunk.toString();
+                const lines = sseBuffer.split('\n');
+                sseBuffer = lines.pop(); // keep the (possibly incomplete) last line for the next chunk
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
                         const data = line.slice(6);
                         if (data === '[DONE]') continue;
                         try {
                             const parsed = JSON.parse(data);
-                            const content = parsed.choices?.[0]?.delta?.content;
+                            const delta = parsed.choices?.[0]?.delta;
+                            // Qwen reasoning streams separately (parsed format) — show progress, never render it
+                            if (delta?.reasoning) {
+                                reasoningChars += delta.reasoning.length;
+                                if (!thinkingStatusSent) {
+                                    thinkingStatusSent = true;
+                                    console.log(`[GROQ] Model started thinking (${Date.now() - requestStartTime}ms after request)`);
+                                    sendToRenderer('update-status', 'Thinking...');
+                                }
+                            }
+                            const content = delta?.content;
                             if (content) {
+                                if (!firstTokenLogged) {
+                                    firstTokenLogged = true;
+                                    console.log(`[GROQ] First answer token: ${Date.now() - requestStartTime}ms (hidden reasoning so far: ${reasoningChars} chars)`);
+                                }
                                 responseText += content;
                                 // Stream to renderer
                                 sendToRenderer('update-response', responseText);
+                            }
+                            // Groq attaches usage stats to the final chunk — queue_time here reveals
+                            // whether a slow request was Groq queuing vs actual generation/thinking
+                            const usage = parsed.x_groq?.usage || parsed.usage;
+                            if (usage && usage.total_time !== undefined) {
+                                console.log(`[GROQ] Usage: queue ${Number(usage.queue_time || 0).toFixed(2)}s | prompt ${usage.prompt_tokens} tok | completion ${usage.completion_tokens} tok in ${Number(usage.completion_time || 0).toFixed(2)}s`);
                             }
                         } catch (e) {
                             // Skip invalid JSON lines
@@ -525,8 +556,9 @@ async function chatWithGroq(userMessage, model = 'qwen-3.6-27b', imageData = nul
             });
 
             res.on('end', () => {
+                clearInterval(idleWatchdog);
                 if (res.statusCode === 200 && responseText) {
-                    console.log(`[GROQ CHAT] Response: ${responseText.length} chars`);
+                    console.log(`[GROQ CHAT] Response: ${responseText.length} chars in ${((Date.now() - requestStartTime) / 1000).toFixed(1)}s${reasoningChars ? ` (+${reasoningChars} hidden reasoning chars)` : ''}`);
 
                     // Save to conversation history
                     conversationHistory.push({
@@ -591,13 +623,35 @@ async function chatWithGroq(userMessage, model = 'qwen-3.6-27b', imageData = nul
                         reject(new Error('Connection error'));
                     }
                 } else {
+                    // HTTP 200 but empty answer: thinking consumed the entire max_tokens budget
+                    // (happens on free tier where the 413 retry shrinks the budget) — retry once without thinking
+                    if (reasoningChars > 0 && !forceNoThink && currentGroqMode === 'exam') {
+                        console.log(`[GROQ] Thinking ate the whole ${effectiveMaxTokens}-token budget with no answer — retrying without thinking`);
+                        resolve(chatWithGroq(userMessage, model, imageData, maxTokensOverride, true));
+                        return;
+                    }
+                    sendToRenderer('update-status', currentGroqMode === 'exam' ? 'Ready' : 'Listening...');
                     resolve(responseText);
                 }
             });
         });
 
+        // Idle watchdog: with 'parsed' reasoning even thinking keeps the stream active,
+        // so 120s of total silence means a hung request/queue — fail fast instead of hanging forever
+        const idleWatchdog = setInterval(() => {
+            if (Date.now() - lastActivityTime > 120 * 1000) {
+                clearInterval(idleWatchdog);
+                console.error('[GROQ] Stream idle for 120s — aborting request');
+                req.destroy(new Error('Request Timeout, Please Try Again'));
+            }
+        }, 10 * 1000);
+
         req.on('error', (e) => {
+            clearInterval(idleWatchdog);
             console.error('[GROQ] Chat request error:', e);
+            if (e.message === 'Request Timeout, Please Try Again') {
+                sendToRenderer('update-status', 'Request Timeout, Please Try Again');
+            }
             reject(e);
         });
 
@@ -778,7 +832,7 @@ async function processAudioBuffer(model = null) {
     } catch (error) {
         console.error('[GROQ] Error processing audio:', error);
         // Only update status if it's not already showing a user-friendly error
-        if (!['Invalid API Key (Groq)', 'Invalid API Key (Gemini)', 'API Quota Exceeded', 'Audio too long', 'Request too large', 'Server error', 'Connection error', 'Invalid request'].includes(error.message) && !error.message.startsWith('Rate Limit:')) {
+        if (!['Invalid API Key (Groq)', 'Invalid API Key (Gemini)', 'API Quota Exceeded', 'Audio too long', 'Request too large', 'Server error', 'Connection error', 'Invalid request', 'Request Timeout, Please Try Again'].includes(error.message) && !error.message.startsWith('Rate Limit:')) {
             sendToRenderer('update-status', 'Processing failed');
         }
         isSpeaking = false;
@@ -857,7 +911,7 @@ async function flushAudioBuffer(model = null) {
     } catch (error) {
         console.error('[GROQ] Error flushing audio:', error);
         // Only update status if it's not already showing a user-friendly error
-        if (!['Invalid API Key (Groq)', 'Invalid API Key (Gemini)', 'API Quota Exceeded', 'Audio too long', 'Request too large', 'Server error', 'Connection error', 'Invalid request'].includes(error.message) && !error.message.startsWith('Rate Limit:')) {
+        if (!['Invalid API Key (Groq)', 'Invalid API Key (Gemini)', 'API Quota Exceeded', 'Audio too long', 'Request too large', 'Server error', 'Connection error', 'Invalid request', 'Request Timeout, Please Try Again'].includes(error.message) && !error.message.startsWith('Rate Limit:')) {
             sendToRenderer('update-status', 'Processing failed');
         }
         return null;
@@ -902,7 +956,7 @@ async function analyzeWithGroq(text, imageData, model = 'qwen-3.6-27b') {
     } catch (error) {
         console.error('[GROQ] Error analyzing:', error);
         // Only update status if it's not already showing a user-friendly error
-        if (!['Invalid API Key (Groq)', 'Invalid API Key (Gemini)', 'API Quota Exceeded', 'Audio too long', 'Request too large', 'Server error', 'Connection error', 'Invalid request'].includes(error.message) && !error.message.startsWith('Rate Limit:')) {
+        if (!['Invalid API Key (Groq)', 'Invalid API Key (Gemini)', 'API Quota Exceeded', 'Audio too long', 'Request too large', 'Server error', 'Connection error', 'Invalid request', 'Request Timeout, Please Try Again'].includes(error.message) && !error.message.startsWith('Rate Limit:')) {
             sendToRenderer('update-status', 'Analysis failed');
         }
         return null;
