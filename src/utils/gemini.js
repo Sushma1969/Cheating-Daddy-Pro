@@ -52,8 +52,10 @@ function scheduleGeminiRateLimitRecovery(statusMessage, recoveryMs = 60 * 1000) 
         if (remainingSec <= 0) {
             clearInterval(rateLimitCountdownInterval);
             rateLimitCountdownInterval = null;
-            console.log('[GEMINI] Rate limit countdown done');
-            sendToRenderer('update-status', 'Ready');
+            // Interview mode (hybrid Flash Lite) listens for audio, exam mode waits for the next screenshot
+            const resetStatus = currentMode === 'interview' ? 'Listening...' : 'Ready';
+            console.log(`[GEMINI] Rate limit countdown done - resetting to ${resetStatus}`);
+            sendToRenderer('update-status', resetStatus);
         } else {
             sendToRenderer('update-status', `${statusMessage} (${remainingSec}s)`);
         }
@@ -369,7 +371,9 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                 isClosed: false,
                 conversationHistory: [], // Track conversation history for context
 
-                async sendRealtimeInput(input) {
+                // retryWithoutTools: set by the empty-response retry — grounded search results on
+                // copyrighted text (e.g. LeetCode problems) can trip the recitation filter → empty answer
+                async sendRealtimeInput(input, retryWithoutTools = false) {
                     if (this.isClosed) {
                         console.log('Session is closed, ignoring input');
                         return;
@@ -478,8 +482,8 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                                     ? { thinkingLevel: 'minimal' }
                                     : undefined;
 
-                            // Pass Google Search tool if enabled in settings
-                            const requestTools = this.tools.length > 0 ? this.tools : undefined;
+                            // Pass Google Search tool if enabled in settings (dropped on the empty-response retry)
+                            const requestTools = this.tools.length > 0 && !retryWithoutTools ? this.tools : undefined;
 
                             // Log request details for latency debugging
                             const imageSize = hasImage ? Math.round(input.media.data.length / 1024) : 0;
@@ -500,6 +504,7 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
 
                             // Stream the response as it arrives
                             let responseText = '';
+                            let lastChunk = null; // Kept for finishReason diagnostics on empty responses
 
                             // Check if it's iterable stream or has stream property
                             const streamToIterate = streamResult.stream || streamResult;
@@ -511,6 +516,7 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
 
                             try {
                                 for await (const chunk of streamToIterate) {
+                                    lastChunk = chunk;
                                     // Use SDK's .text getter which properly handles thinking parts
                                     const chunkText = chunk.text;
                                     if (chunkText) {
@@ -533,7 +539,7 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                                 sendToRenderer('update-response', responseText);
 
                                 if (responseText && responseText.trim()) {
-                                    console.log(`✅ Got response: ${responseText.length} chars in ${Date.now() - requestStartTime}ms`);
+                                    console.log(`Got response: ${responseText.length} chars in ${Date.now() - requestStartTime}ms`);
 
                                     // Save to conversation history with full data
                                     this.conversationHistory.push(
@@ -565,13 +571,23 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                                         }
                                     }
 
-                                    console.log(`💬 Conversation history: ${this.conversationHistory.length / 2} turns`);
+                                    console.log(` Conversation history: ${this.conversationHistory.length / 2} turns`);
                                     // Interview mode: "Listening..." (matches Groq Llama flow)
                                     // Coding/exam mode: "Ready" (waiting for next screenshot)
                                     sendToRenderer('update-status', currentMode === 'interview' ? 'Listening...' : 'Ready');
                                     return responseText;
                                 } else {
-                                    console.error('❌ No response text received');
+                                    // Log WHY it was empty — recitation/safety blocks and token exhaustion land here
+                                    const finishReason = lastChunk?.candidates?.[0]?.finishReason;
+                                    const blockReason = lastChunk?.promptFeedback?.blockReason;
+                                    console.error(`No response text received (finishReason: ${finishReason || 'unknown'}${blockReason ? `, blockReason: ${blockReason}` : ''})`);
+
+                                    // Grounded search results on copyrighted text (LeetCode etc.) can trip the
+                                    // recitation filter and return an empty candidate — retry once without the tool
+                                    if (requestTools && !retryWithoutTools) {
+                                        console.log(' Empty response with Google Search enabled — retrying once without tools...');
+                                        return await this.sendRealtimeInput(input, true);
+                                    }
                                     sendToRenderer('update-status', currentMode === 'interview' ? 'Listening...' : 'No response generated');
                                     return null;
                                 }

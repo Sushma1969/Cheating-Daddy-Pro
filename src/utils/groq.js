@@ -98,8 +98,10 @@ function scheduleRateLimitRecovery(statusMessage, recoveryMs = 30 * 1000) {
         if (remainingSec <= 0) {
             clearInterval(rateLimitCountdownInterval);
             rateLimitCountdownInterval = null;
-            console.log('[GROQ] Rate limit countdown done - resetting to Listening...');
-            sendToRenderer('update-status', 'Listening...');
+            // Interview mode listens for audio, exam mode waits for the next screenshot
+            const resetStatus = currentGroqMode === 'exam' ? 'Ready' : 'Listening...';
+            console.log(`[GROQ] Rate limit countdown done - resetting to ${resetStatus}`);
+            sendToRenderer('update-status', resetStatus);
         } else {
             sendToRenderer('update-status', `${statusMessage} (${remainingSec}s)`);
         }

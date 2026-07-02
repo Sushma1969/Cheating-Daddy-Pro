@@ -651,6 +651,19 @@ function setupWindowsLoopbackProcessing() {
     audioProcessor.connect(audioContext.destination);
 }
 
+// Image tokens scale with RESOLUTION, not JPEG quality — vision models tokenize by pixel
+// dimensions (patches/tiles). So medium/low also downscale the capture; that's what actually
+// cuts prompt tokens (and Groq TPM usage), the compression level only shrinks upload bytes.
+const MAX_CAPTURE_WIDTH = { high: null, medium: 1440, low: 1080 };
+
+function getScaledCaptureSize(videoWidth, videoHeight, imageQuality) {
+    const maxWidth = MAX_CAPTURE_WIDTH[imageQuality] || null;
+    if (!maxWidth || videoWidth <= maxWidth) {
+        return { width: videoWidth, height: videoHeight };
+    }
+    return { width: maxWidth, height: Math.round(videoHeight * (maxWidth / videoWidth)) };
+}
+
 async function captureScreenshot(imageQuality = 'medium', isManual = false) {
     console.log(`Capturing ${isManual ? 'manual' : 'automated'} screenshot...`);
     if (!mediaStream) return;
@@ -690,7 +703,14 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
         return;
     }
 
-    offscreenContext.drawImage(hiddenVideo, 0, 0, offscreenCanvas.width, offscreenCanvas.height);
+    // Resize canvas per quality level and draw the frame scaled down
+    const captureSize = getScaledCaptureSize(hiddenVideo.videoWidth, hiddenVideo.videoHeight, imageQuality);
+    if (offscreenCanvas.width !== captureSize.width || offscreenCanvas.height !== captureSize.height) {
+        offscreenCanvas.width = captureSize.width;
+        offscreenCanvas.height = captureSize.height;
+        console.log(`[SCREENSHOT] Capture size: ${captureSize.width}x${captureSize.height} (quality: ${imageQuality})`);
+    }
+    offscreenContext.drawImage(hiddenVideo, 0, 0, captureSize.width, captureSize.height);
 
     // Check if image was drawn properly by sampling a pixel
     const imageData = offscreenContext.getImageData(0, 0, 1, 1);
@@ -896,7 +916,13 @@ async function sendTextMessage(text) {
             return { success: false, error: 'Video not ready' };
         }
 
-        offscreenContext.drawImage(hiddenVideo, 0, 0, offscreenCanvas.width, offscreenCanvas.height);
+        // Resize canvas per quality level and draw the frame scaled down (same as captureScreenshot)
+        const captureSize = getScaledCaptureSize(hiddenVideo.videoWidth, hiddenVideo.videoHeight, currentImageQuality);
+        if (offscreenCanvas.width !== captureSize.width || offscreenCanvas.height !== captureSize.height) {
+            offscreenCanvas.width = captureSize.width;
+            offscreenCanvas.height = captureSize.height;
+        }
+        offscreenContext.drawImage(hiddenVideo, 0, 0, captureSize.width, captureSize.height);
 
         // Get quality setting (lower values reduce payload for faster API processing)
         let qualityValue;
