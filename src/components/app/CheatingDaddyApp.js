@@ -149,12 +149,10 @@ export class CheatingDaddyApp extends LitElement {
 
     // One-time migration for users upgrading from older versions:
     // Llama 4 Maverick/Scout were shut down by Groq (replaced by Qwen 3.6 27B)
-    // and Gemini 2.5 Flash was replaced by Gemini 3.5 Flash in exam mode
     migrateLegacyModels() {
         const legacyModelMap = {
             'llama-4-maverick': 'qwen-3.6-27b',
             'llama-4-scout': 'qwen-3.6-27b',
-            'gemini-2.5-flash': 'gemini-3.5-flash',
         };
         const storedModel = localStorage.getItem('selectedModel');
         if (storedModel && legacyModelMap[storedModel]) {
@@ -167,6 +165,13 @@ export class CheatingDaddyApp extends LitElement {
             if (lastModel && legacyModelMap[lastModel]) {
                 localStorage.setItem(key, legacyModelMap[lastModel]);
             }
+        }
+        // Google Search default flipped to OFF — grounding is paid-only on Gemini 3.x / 2.5 Pro,
+        // and the old always-on 'true' caused constant 429s for free-tier keys in exam mode.
+        // (Gemini 2.5 Flash models get search forced ON in gemini.js regardless of this setting.)
+        if (!localStorage.getItem('googleSearchDefaultMigrated')) {
+            localStorage.setItem('googleSearchEnabled', 'false');
+            localStorage.setItem('googleSearchDefaultMigrated', 'true');
         }
     }
 

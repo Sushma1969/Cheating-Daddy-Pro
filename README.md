@@ -13,8 +13,9 @@ A real-time AI assistant that provides contextual help during video calls, inter
 ### AI & Model Features
 - **Dual Mode Support**: Interview Mode (with live audio) & Exam Assistant Mode 
 - **Multi-Model Support**:
-  - **Gemini Models**: Gemini 2.5 Flash Lite, Gemini 3.1 Flash Lite, Gemini 3.5 Flash, Gemini 3 Flash Preview and Gemini 3.1 Pro Preview.
-  - **Groq Qwen Model**: Qwen 3.6 27B with vision support (for interview mode)
+  - **Gemini Models**: Gemini 2.5 Flash Lite, Gemini 3.1 Flash Lite, Gemini 3.5 Flash, Gemini 3 Flash Preview, Gemini 3.1 Pro Preview, Gemini 2.5 Flash and Gemini 2.5 Pro.
+  - **Groq Qwen Model**: Qwen 3.6 27B with vision + thinking support (interview and exam mode)
+- **Smart Google Search Grounding**: Always on for Gemini 2.5 Flash models (free tier), optional toggle for Gemini 3.x / 2.5 Pro (needs paid API key)
 - **Model Generation Settings**: Customize Temperature, Top P, and Max Output Tokens per model
 - **Per-Model Settings Persistence**: Your custom settings are saved separately for each model
 - **Model-Specific Defaults**: Optimized default values based on 2025/2026 documentation
@@ -59,7 +60,7 @@ A real-time AI assistant that provides contextual help during video calls, inter
 2. Choose your profile and language in settings
 3. Select your preferred model:
    - **Interview Mode**: Gemini 2.5 Flash Lite, Gemini 3.1 Flash Lite or Groq Qwen 3.6 27B model.
-   - **Exam Mode**: Gemini 3.5 Flash, Gemini 3 Flash Preview and Gemini 3.1 Pro Preview.
+   - **Exam Mode**: Gemini 3.5 Flash, Gemini 3 Flash Preview, Gemini 3.1 Pro Preview (paid), Gemini 2.5 Pro (paid), Gemini 2.5 Flash (free and Google Search) or Groq Qwen 3.6 27B (thinking mode).
 4. Select your preferred VAD mode (Automatic or Manual) in Interview Mode.
 5. Click "Start Session" to begin.
 6. Position the window using keyboard shortcuts.

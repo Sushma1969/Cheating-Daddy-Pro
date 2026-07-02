@@ -116,6 +116,8 @@ let generationSettings = {
 const MODEL_MAX_OUTPUT_TOKENS = {
     // Gemini models
     'gemini-3.5-flash': 65536,
+    'gemini-2.5-flash': 65536,
+    'gemini-2.5-pro': 65536,
     'gemini-2.5-flash-lite': 65536,
     'gemini-3.1-flash-lite': 65536,
     'gemini-3-flash-preview': 65536,
@@ -136,12 +138,17 @@ function sendToRenderer(channel, data) {
     }
 }
 
-async function getEnabledTools() {
+async function getEnabledTools(model = '') {
     const tools = [];
 
-    // Check if Google Search is enabled (default: true)
-    const googleSearchEnabled = await getStoredSetting('googleSearchEnabled', 'true');
-    console.log('Google Search enabled:', googleSearchEnabled);
+    // Google Search grounding quota differs per model family (verified against live API):
+    // - Gemini 2.5 Flash / Flash Lite: grounding is FREE tier → always ON for these
+    // - Gemini 3.x / 2.5 Pro: grounding is PAID only → respect the user toggle (default: off)
+    const searchFreeModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+    const googleSearchEnabled = searchFreeModels.includes(model)
+        ? 'true'
+        : await getStoredSetting('googleSearchEnabled', 'false');
+    console.log(`Google Search enabled: ${googleSearchEnabled} (model: ${model})`);
 
     if (googleSearchEnabled === 'true') {
         tools.push({ googleSearch: {} });
@@ -206,8 +213,8 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
         apiKey: apiKey,
     });
 
-    // Get enabled tools first to determine Google Search status
-    const enabledTools = await getEnabledTools();
+    // Get enabled tools first to determine Google Search status (model-aware: free vs paid grounding)
+    const enabledTools = await getEnabledTools(model || 'gemini-3.5-flash');
     const googleSearchEnabled = enabledTools.some(tool => tool.googleSearch);
 
     let systemPrompt = getSystemPrompt(profile, customPrompt, googleSearchEnabled);
@@ -450,15 +457,14 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                                 }
                             }
 
-                            // Thinking levels:
-                            // Gemini 3.5 Flash / 3 Flash → 'low' (fast but accurate)
-                            // Gemini 3.1 Pro → 'high' (best accuracy)
-                            // Gemini 3.1 Flash Lite → 'low' (interview mode, keep latency down)
-                            // Gemini 2.5 Flash Lite → no thinking (off by default)
-                            const thinkingConfig = this.model === 'gemini-3-flash-preview' || this.model === 'gemini-3.5-flash' || this.model === 'gemini-3.1-flash-lite'
-                                ? { thinkingLevel: 'low' }
-                                : this.model === 'gemini-3.1-pro-preview'
-                                    ? { thinkingLevel: 'high' }
+                            // Thinking levels (per model defaults):
+                            // Gemini 3.5 Flash / 3 Flash / 3.1 Pro → 'high' (exam mode, best accuracy)
+                            // Gemini 3.1 Flash Lite → 'minimal' (interview mode, lowest latency)
+                            // Gemini 2.5 family → uses thinkingBudget API, leave default (Pro/Flash think, Lite off)
+                            const thinkingConfig = ['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-3.1-pro-preview'].includes(this.model)
+                                ? { thinkingLevel: 'high' }
+                                : this.model === 'gemini-3.1-flash-lite'
+                                    ? { thinkingLevel: 'minimal' }
                                     : undefined;
 
                             // Pass Google Search tool if enabled in settings

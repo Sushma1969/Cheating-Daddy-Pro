@@ -2,7 +2,7 @@
 const { BrowserWindow, ipcMain } = require('electron');
 const https = require('https');
 const { URL } = require('url');
-const { getCondensedSystemPrompt } = require('./prompts');
+const { getCondensedSystemPrompt, getSystemPrompt, getExamMessageHint } = require('./prompts');
 const { chatWithGeminiText } = require('./gemini');
 
 // Groq API configuration
@@ -50,6 +50,9 @@ const CHECK_INTERVAL_MS = 500; // Check every 500ms for faster response
 
 // Store selected model for chat completion
 let selectedGroqModel = 'qwen-3.6-27b';
+
+// Track mode: 'interview' (audio + concise answers) or 'exam' (screenshot-based, thinking ON)
+let currentGroqMode = 'interview';
 
 // Rate limit countdown - auto-reset status after 429 errors with live countdown in header
 let rateLimitCountdownInterval = null;
@@ -178,9 +181,14 @@ function initializeGroq(apiKey, customPrompt = '', profile = 'interview', langua
         rateLimitCountdownInterval = null;
     }
 
-    // Use CONDENSED system prompt for Groq (strict HTTP body size limit ~20KB)
-    // Full prompt is ~27KB which exceeds Groq's limit
-    currentSystemPrompt = getCondensedSystemPrompt(profile, customPrompt);
+    // Exam mode: use the SAME full exam prompt the Gemini models follow (compact enough for Groq)
+    // Interview mode: use CONDENSED prompt (high request rate, full interview prompt ~27KB is too heavy)
+    currentGroqMode = profile === 'exam' ? 'exam' : 'interview';
+    if (currentGroqMode === 'exam') {
+        currentSystemPrompt = getSystemPrompt(profile, customPrompt, false); // false = no Google Search on Groq
+    } else {
+        currentSystemPrompt = getCondensedSystemPrompt(profile, customPrompt);
+    }
 
     // Add language instruction - matches Gemini's full language support
     const languageMap = {
@@ -395,16 +403,27 @@ async function chatWithGroq(userMessage, model = 'qwen-3.6-27b', imageData = nul
             messages.push({ role: 'user', content: userMessage });
         }
 
-        // Qwen 3.6 dual-mode reasoning: disable thinking for low-latency interview replies
-        // (Groq's recommended non-thinking sampling is set via AdvancedView defaults)
-        const qwenParams = isQwen ? { reasoning_effort: 'none' } : {};
+        // Qwen 3.6 dual-mode reasoning (per Groq/Qwen docs):
+        // Interview → thinking OFF ('none') for low-latency replies
+        // Exam → thinking ON ('default') for accuracy; 'hidden' keeps reasoning out of the response
+        // (Mode-specific sampling temps are set via AdvancedView defaults)
+        const qwenParams = isQwen
+            ? (currentGroqMode === 'exam'
+                ? { reasoning_effort: 'default', reasoning_format: 'hidden' }
+                : { reasoning_effort: 'none' })
+            : {};
+
+        // Exam mode: hidden thinking tokens count toward max_tokens — ensure room for reasoning + full answer
+        const effectiveMaxTokens = currentGroqMode === 'exam'
+            ? Math.max(generationSettings.maxOutputTokens, 8192)
+            : generationSettings.maxOutputTokens;
 
         let requestBody = JSON.stringify({
             model: modelId,
             messages: messages,
             temperature: generationSettings.temperature,
             top_p: generationSettings.topP,
-            max_tokens: generationSettings.maxOutputTokens,
+            max_tokens: effectiveMaxTokens,
             stream: true,
             ...qwenParams
         });
@@ -442,7 +461,7 @@ async function chatWithGroq(userMessage, model = 'qwen-3.6-27b', imageData = nul
                 messages: trimmedMessages,
                 temperature: generationSettings.temperature,
                 top_p: generationSettings.topP,
-                max_tokens: generationSettings.maxOutputTokens,
+                max_tokens: effectiveMaxTokens,
                 stream: true,
                 ...qwenParams
             });
@@ -511,7 +530,8 @@ async function chatWithGroq(userMessage, model = 'qwen-3.6-27b', imageData = nul
                         conversationHistory = conversationHistory.slice(-10);
                     }
 
-                    sendToRenderer('update-status', 'Listening...');
+                    // Interview mode: back to "Listening..." | Exam mode: "Ready" (waiting for next screenshot)
+                    sendToRenderer('update-status', currentGroqMode === 'exam' ? 'Ready' : 'Listening...');
                     resolve(responseText);
                 } else if (res.statusCode !== 200) {
                     console.error('[GROQ] Chat API Error:', res.statusCode, rawErrorBody);
@@ -835,10 +855,14 @@ async function analyzeWithGroq(text, imageData, model = 'qwen-3.6-27b') {
     console.log('[GROQ] Analyzing screenshot with text:', text.substring(0, 100) + '...');
 
     try {
-        // Add language reminder for non-English languages
         let finalText = text;
+        // Exam mode: append per-message exam hints (code only / MCQ answer) — same as the Gemini path
+        if (currentGroqMode === 'exam') {
+            finalText += getExamMessageHint();
+        }
+        // Add language reminder for non-English languages
         if (storedLanguageName !== 'English') {
-            finalText = `${text} (Remember: Respond in ${storedLanguageName})`;
+            finalText = `${finalText} (Remember: Respond in ${storedLanguageName})`;
         }
 
         let response;

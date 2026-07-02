@@ -205,8 +205,22 @@ async function initializeGemini(profile = 'interview', language = 'en-US', mode 
         }
 
         cheddar.setStatus('Listening...');
+    } else if (selectedModel === 'qwen-3.6-27b') {
+        // Coding/Exam mode with Qwen — Groq only (screenshot analysis via Qwen vision + thinking)
+        const groqApiKey = localStorage.getItem('groqApiKey')?.trim();
+        if (groqApiKey) {
+            const result = await ipcRenderer.invoke('initialize-groq', groqApiKey, localStorage.getItem('customPrompt') || '', profile, language, selectedModel);
+            if (result.success) {
+                console.log('[RENDERER] Groq initialized for exam mode with Qwen');
+                cheddar.setStatus('Ready');
+            } else {
+                cheddar.setStatus('Error: ' + result.error);
+            }
+        } else {
+            cheddar.setStatus('Error: No Groq API key');
+        }
     } else {
-        // Coding/Exam mode — Gemini only
+        // Coding/Exam mode — Gemini models
         const apiKey = localStorage.getItem('apiKey')?.trim();
         if (apiKey) {
             const success = await ipcRenderer.invoke('initialize-gemini', apiKey, localStorage.getItem('customPrompt') || '', profile, language, selectedMode, selectedModel);
@@ -403,8 +417,10 @@ function setupLinuxSystemAudioProcessing() {
     const selectedMode = localStorage.getItem('selectedMode') || 'interview';
     const selectedModel = localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
     const useGroqForSTT = selectedMode === 'interview';
+    // Exam mode with Qwen has no Gemini session — audio isn't used there, don't send it anywhere
+    const skipAudioSend = selectedMode === 'coding' && selectedModel === 'qwen-3.6-27b';
 
-    console.log(`[AUDIO] Mode: ${selectedMode}, Model: ${selectedModel}, Using Groq: ${useGroqForSTT}`);
+    console.log(`[AUDIO] Mode: ${selectedMode}, Model: ${selectedModel}, Using Groq: ${useGroqForSTT}, Skip audio: ${skipAudioSend}`);
 
     // Initialize VAD if enabled and available
     let isVADEnabled = false;
@@ -424,7 +440,9 @@ function setupLinuxSystemAudioProcessing() {
                             const pcmData16 = convertFloat32ToInt16(audioSegment);
                             const base64Data = arrayBufferToBase64(pcmData16.buffer);
 
-                            if (useGroqForSTT) {
+                            if (skipAudioSend) {
+                                // Qwen exam mode: screenshot-based only, drop audio
+                            } else if (useGroqForSTT) {
                                 // Send to Groq for Whisper transcription
                                 await ipcRenderer.invoke('groq-add-audio', { data: base64Data });
                                 // VAD segment sent to Groq
@@ -491,7 +509,9 @@ function setupLinuxSystemAudioProcessing() {
                 const pcmData16 = convertFloat32ToInt16(chunk);
                 const base64Data = arrayBufferToBase64(pcmData16.buffer);
 
-                if (useGroqForSTT) {
+                if (skipAudioSend) {
+                    // Qwen exam mode: screenshot-based only, drop audio
+                } else if (useGroqForSTT) {
                     // Send to Groq for Whisper transcription
                     await ipcRenderer.invoke('groq-add-audio', { data: base64Data });
                 } else {
@@ -519,8 +539,10 @@ function setupWindowsLoopbackProcessing() {
     const selectedMode = localStorage.getItem('selectedMode') || 'interview';
     const selectedModel = localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
     const useGroqForSTT = selectedMode === 'interview';
+    // Exam mode with Qwen has no Gemini session — audio isn't used there, don't send it anywhere
+    const skipAudioSend = selectedMode === 'coding' && selectedModel === 'qwen-3.6-27b';
 
-    console.log(`[AUDIO] Mode: ${selectedMode}, Model: ${selectedModel}, Using Groq: ${useGroqForSTT}`);
+    console.log(`[AUDIO] Mode: ${selectedMode}, Model: ${selectedModel}, Using Groq: ${useGroqForSTT}, Skip audio: ${skipAudioSend}`);
 
     // Initialize VAD if enabled and available
     let isVADEnabled = false;
@@ -540,7 +562,9 @@ function setupWindowsLoopbackProcessing() {
                             const pcmData16 = convertFloat32ToInt16(audioSegment);
                             const base64Data = arrayBufferToBase64(pcmData16.buffer);
 
-                            if (useGroqForSTT) {
+                            if (skipAudioSend) {
+                                // Qwen exam mode: screenshot-based only, drop audio
+                            } else if (useGroqForSTT) {
                                 // Send to Groq for Whisper transcription
                                 await ipcRenderer.invoke('groq-add-audio', { data: base64Data });
                                 // VAD segment sent to Groq
@@ -607,7 +631,9 @@ function setupWindowsLoopbackProcessing() {
                 const pcmData16 = convertFloat32ToInt16(chunk);
                 const base64Data = arrayBufferToBase64(pcmData16.buffer);
 
-                if (useGroqForSTT) {
+                if (skipAudioSend) {
+                    // Qwen exam mode: screenshot-based only, drop audio
+                } else if (useGroqForSTT) {
                     // Send to Groq for Whisper transcription
                     await ipcRenderer.invoke('groq-add-audio', { data: base64Data });
                 } else {
@@ -713,10 +739,11 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
 
                 // All interview mode manual screenshots go through Groq handler
                 // (groq.js internally routes to Gemini for the Flash Lite models)
+                // Exam mode with Qwen also goes through Groq (Qwen vision handles the screenshot)
                 const selectedMode = localStorage.getItem('selectedMode') || 'interview';
                 const selectedModel = localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
                 const selectedProfile = localStorage.getItem('selectedProfile') || 'interview';
-                const useGroq = selectedMode === 'interview' && captureIsManual;
+                const useGroq = (selectedMode === 'interview' && captureIsManual) || (selectedMode === 'coding' && selectedModel === 'qwen-3.6-27b');
 
                 // Profile-aware screenshot prompt — tells the model what context to analyze in
                 const screenshotPrompts = {
@@ -906,9 +933,10 @@ async function sendTextMessage(text) {
 
         // All interview mode screenshots go through Groq handler
         // (groq.js internally routes to Gemini for the Flash Lite models)
+        // Exam mode with Qwen also goes through Groq (Qwen vision handles the screenshot)
         const selectedMode = localStorage.getItem('selectedMode') || 'interview';
         const selectedModel = localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
-        const useGroq = selectedMode === 'interview';
+        const useGroq = selectedMode === 'interview' || selectedModel === 'qwen-3.6-27b';
 
         let result;
         if (useGroq) {

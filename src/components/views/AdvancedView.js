@@ -487,6 +487,8 @@ export class AdvancedView extends LitElement {
     static MODEL_MAX_TOKENS = {
         // Gemini models
         'gemini-3.5-flash': 65536,
+        'gemini-2.5-flash': 65536,
+        'gemini-2.5-pro': 65536,
         'gemini-2.5-flash-lite': 65536,
         'gemini-3.1-flash-lite': 65536,
         'gemini-3-flash-preview': 65536,
@@ -529,11 +531,29 @@ export class AdvancedView extends LitElement {
             topP: 0.95,
             maxOutputTokens: 16384,
         },
-        // Groq Qwen 3.6 27B - Interview mode (Groq/Qwen recommended non-thinking settings: temp 0.7, topP 0.8)
+        // Gemini 2.5 Pro - Exam/Coding mode (deep reasoning, paid tier)
+        'gemini-2.5-pro_coding': {
+            temperature: 1.0,
+            topP: 0.95,
+            maxOutputTokens: 16384,
+        },
+        // Gemini 2.5 Flash - Exam/Coding mode (free tier + free Google Search grounding)
+        'gemini-2.5-flash_coding': {
+            temperature: 0.5,
+            topP: 0.95,
+            maxOutputTokens: 8192,
+        },
+        // Groq Qwen 3.6 27B - Interview mode (Qwen docs non-thinking settings: temp 0.7, topP 0.8)
         'qwen-3.6-27b_interview': {
             temperature: 0.7,
             topP: 0.8,
             maxOutputTokens: 4096,
+        },
+        // Groq Qwen 3.6 27B - Exam/Coding mode (Qwen docs thinking mode, temp 0.6 for precise coding)
+        'qwen-3.6-27b_coding': {
+            temperature: 0.6,
+            topP: 0.95,
+            maxOutputTokens: 8192,
         },
     };
 
@@ -601,6 +621,8 @@ export class AdvancedView extends LitElement {
     getModelDisplayName() {
         const modelNames = {
             'gemini-3.5-flash': 'Gemini 3.5 Flash',
+            'gemini-2.5-flash': 'Gemini 2.5 Flash',
+            'gemini-2.5-pro': 'Gemini 2.5 Pro',
             'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
             'gemini-3.1-flash-lite': 'Gemini 3.1 Flash Lite',
             'gemini-3-flash-preview': 'Gemini 3.0 Flash',
