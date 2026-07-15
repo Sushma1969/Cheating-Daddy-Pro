@@ -712,7 +712,7 @@ export class AssistantView extends LitElement {
                         return code; // Fallback to plain code
                     }
                 });
-                let rendered = window.marked.parse(content);
+                let rendered = window.marked.parse(this.normalizeLaTeXDelimiters(content));
                 rendered = this.renderLaTeX(rendered);
                 rendered = this.wrapWordsInSpans(rendered);
                 rendered = this.enhanceCodeBlocks(rendered);
@@ -724,6 +724,26 @@ export class AssistantView extends LitElement {
         }
         console.log('Marked not available, using plain text');
         return content; // Fallback if marked is not available
+    }
+
+    // Qwen (and other OpenAI-convention models) emit LaTeX as \(...\) and \[...\],
+    // but marked strips those backslashes during parsing (\[ becomes [), breaking the math.
+    // Normalize them to $-style BEFORE marked runs; fenced blocks AND inline code stay untouched.
+    normalizeLaTeXDelimiters(content) {
+        // Inner content is trimmed and newlines collapsed:
+        // - models pad delimiters like \( \eta \), which would break the no-space inline rule
+        // - marked (breaks: true) turns inner newlines into <br>, splitting the math across text nodes
+        const collapse = latex => latex.trim().replace(/\s*\n\s*/g, ' ');
+        return content
+            .split(/(```[\s\S]*?```|`[^`\n]+`)/g)
+            .map(segment => {
+                if (segment.startsWith('`')) return segment;
+                return segment
+                    .replace(/\\\[([\s\S]+?)\\\]/g, (match, latex) => `$$${collapse(latex)}$$`)
+                    .replace(/\\\(([\s\S]+?)\\\)/g, (match, latex) => `$${collapse(latex)}$`)
+                    .replace(/\$\$([\s\S]+?)\$\$/g, (match, latex) => `$$${collapse(latex)}$$`);
+            })
+            .join('');
     }
 
     renderLaTeX(html) {
@@ -782,7 +802,9 @@ export class AssistantView extends LitElement {
                 });
 
                 // Process inline math ($...$)
-                text = text.replace(/\$([^\$\n]+?)\$/g, (match, latex) => {
+                // No space allowed right after/before the delimiters, so currency mentions
+                // like "costs $20 and $5" don't get falsely rendered as math
+                text = text.replace(/\$(?!\s)([^\$\n]+?)(?<!\s)\$/g, (match, latex) => {
                     try {
                         return window.katex.renderToString(latex.trim(), {
                             displayMode: false,

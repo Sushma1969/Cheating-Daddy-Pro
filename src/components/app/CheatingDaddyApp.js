@@ -120,6 +120,7 @@ export class CheatingDaddyApp extends LitElement {
 
     constructor() {
         super();
+        this.migrateLegacyModels();
         this.currentView = localStorage.getItem('onboardingCompleted') ? 'main' : 'onboarding';
         this.statusText = '';
         this.startTime = null;
@@ -144,6 +145,34 @@ export class CheatingDaddyApp extends LitElement {
 
         // Apply layout mode to document root
         this.updateLayoutMode();
+    }
+
+    // One-time migration for users upgrading from older versions:
+    // Llama 4 Maverick/Scout were shut down by Groq (replaced by Qwen 3.6 27B)
+    migrateLegacyModels() {
+        const legacyModelMap = {
+            'llama-4-maverick': 'qwen-3.6-27b',
+            'llama-4-scout': 'qwen-3.6-27b',
+        };
+        const storedModel = localStorage.getItem('selectedModel');
+        if (storedModel && legacyModelMap[storedModel]) {
+            console.log(`[MIGRATION] Replacing deprecated model ${storedModel} with ${legacyModelMap[storedModel]}`);
+            localStorage.setItem('selectedModel', legacyModelMap[storedModel]);
+        }
+        // Also migrate per-mode remembered models so mode switches don't restore dead models
+        for (const key of ['lastModel_interview', 'lastModel_coding']) {
+            const lastModel = localStorage.getItem(key);
+            if (lastModel && legacyModelMap[lastModel]) {
+                localStorage.setItem(key, legacyModelMap[lastModel]);
+            }
+        }
+        // Google Search default flipped to OFF — grounding is paid-only on Gemini 3.x / 2.5 Pro,
+        // and the old always-on 'true' caused constant 429s for free-tier keys in exam mode.
+        // (Gemini 2.5 Flash models get search forced ON in gemini.js regardless of this setting.)
+        if (!localStorage.getItem('googleSearchDefaultMigrated')) {
+            localStorage.setItem('googleSearchEnabled', 'false');
+            localStorage.setItem('googleSearchDefaultMigrated', 'true');
+        }
     }
 
     connectedCallback() {
@@ -289,9 +318,9 @@ export class CheatingDaddyApp extends LitElement {
 
     // Main view event handlers
     async handleStart() {
-        const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
-        const isGroqModel = selectedModel && (selectedModel.includes('llama') || selectedModel.includes('groq'));
-        const needsBothKeys = selectedModel === 'gemini-2.5-flash-lite' && this.selectedProfile !== 'exam';
+        const selectedModel = localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
+        const isGroqModel = selectedModel && (selectedModel.includes('qwen') || selectedModel.includes('groq'));
+        const needsBothKeys = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite'].includes(selectedModel) && this.selectedProfile !== 'exam';
         const mainView = this.shadowRoot.querySelector('main-view');
 
         // Validate the right API key(s) based on model
@@ -358,10 +387,10 @@ export class CheatingDaddyApp extends LitElement {
     async handleAPIKeyHelp() {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
-            const isGroqModel = selectedModel && (selectedModel.includes('llama') || selectedModel.includes('groq'));
+            const selectedModel = localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
+            const isGroqModel = selectedModel && (selectedModel.includes('qwen') || selectedModel.includes('groq'));
 
-            if (selectedModel === 'gemini-2.5-flash-lite' && this.selectedProfile !== 'exam') {
+            if (['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite'].includes(selectedModel) && this.selectedProfile !== 'exam') {
                 // Dual key mode (interview): open both API key pages
                 await ipcRenderer.invoke('open-external', 'https://aistudio.google.com/');
                 await ipcRenderer.invoke('open-external', 'https://groq.com/');

@@ -264,20 +264,22 @@ export class AppHeader extends LitElement {
 
         // Format model names for display
         const modelMap = {
+            'gemini-3.5-flash': '3.5 Flash',
             'gemini-2.5-flash': '2.5 Flash',
+            'gemini-2.5-pro': '2.5 Pro',
             'gemini-2.5-flash-lite': '2.5 Flash Lite',
+            'gemini-3.1-flash-lite': '3.1 Flash Lite',
             'gemini-3-flash-preview': '3.0 Flash',
-            'gemini-3-pro-preview': '3.0 Pro Preview',
-            'llama-4-maverick': 'Llama 4 Maverick',
-            'llama-4-scout': 'Llama 4 Scout',
+            'gemini-3.1-pro-preview': '3.1 Pro Preview',
+            'qwen-3.6-27b': 'Qwen 3.6 27B',
         };
 
         return modelMap[this.currentModel] || this.currentModel;
     }
 
-    // Check if model is Groq/Llama model
+    // Check if model is a Groq model (Qwen)
     isGroqModel() {
-        return this.currentModel && (this.currentModel.includes('llama') || this.currentModel.includes('groq'));
+        return this.currentModel && (this.currentModel.includes('qwen') || this.currentModel.includes('groq'));
     }
 
     // Check if status is an error message (hide Hide button during errors)

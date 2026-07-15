@@ -166,10 +166,10 @@ function arrayBufferToBase64(buffer) {
     return btoa(binary);
 }
 
-async function initializeGemini(profile = 'interview', language = 'en-US', mode = 'interview', model = 'llama-4-maverick') {
+async function initializeGemini(profile = 'interview', language = 'en-US', mode = 'interview', model = 'qwen-3.6-27b') {
     // Get mode and model from localStorage if not provided
     const selectedMode = mode || localStorage.getItem('selectedMode') || 'interview';
-    const selectedModel = model || localStorage.getItem('selectedModel') || 'llama-4-maverick';
+    const selectedModel = model || localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
 
     if (selectedMode === 'interview') {
         // ALL interview models use Groq Whisper for STT
@@ -187,8 +187,8 @@ async function initializeGemini(profile = 'interview', language = 'en-US', mode 
             return;
         }
 
-        // If Gemini model, also initialize Gemini for text generation + screenshots
-        if (selectedModel === 'gemini-2.5-flash-lite') {
+        // If Gemini model (Flash Lite 2.5 / 3.1), also initialize Gemini for text generation + screenshots
+        if (selectedModel.startsWith('gemini-')) {
             const apiKey = localStorage.getItem('apiKey')?.trim();
             if (apiKey) {
                 const success = await ipcRenderer.invoke('initialize-gemini', apiKey, localStorage.getItem('customPrompt') || '', profile, language, selectedMode, selectedModel);
@@ -205,8 +205,22 @@ async function initializeGemini(profile = 'interview', language = 'en-US', mode 
         }
 
         cheddar.setStatus('Listening...');
+    } else if (selectedModel === 'qwen-3.6-27b') {
+        // Coding/Exam mode with Qwen — Groq only (screenshot analysis via Qwen vision + thinking)
+        const groqApiKey = localStorage.getItem('groqApiKey')?.trim();
+        if (groqApiKey) {
+            const result = await ipcRenderer.invoke('initialize-groq', groqApiKey, localStorage.getItem('customPrompt') || '', profile, language, selectedModel);
+            if (result.success) {
+                console.log('[RENDERER] Groq initialized for exam mode with Qwen');
+                cheddar.setStatus('Ready');
+            } else {
+                cheddar.setStatus('Error: ' + result.error);
+            }
+        } else {
+            cheddar.setStatus('Error: No Groq API key');
+        }
     } else {
-        // Coding/Exam mode — Gemini only
+        // Coding/Exam mode — Gemini models
         const apiKey = localStorage.getItem('apiKey')?.trim();
         if (apiKey) {
             const success = await ipcRenderer.invoke('initialize-gemini', apiKey, localStorage.getItem('customPrompt') || '', profile, language, selectedMode, selectedModel);
@@ -401,10 +415,12 @@ function setupLinuxSystemAudioProcessing() {
 
     // All interview mode audio goes to Groq Whisper for STT
     const selectedMode = localStorage.getItem('selectedMode') || 'interview';
-    const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
+    const selectedModel = localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
     const useGroqForSTT = selectedMode === 'interview';
+    // Exam mode with Qwen has no Gemini session — audio isn't used there, don't send it anywhere
+    const skipAudioSend = selectedMode === 'coding' && selectedModel === 'qwen-3.6-27b';
 
-    console.log(`[AUDIO] Mode: ${selectedMode}, Model: ${selectedModel}, Using Groq: ${useGroqForSTT}`);
+    console.log(`[AUDIO] Mode: ${selectedMode}, Model: ${selectedModel}, Using Groq: ${useGroqForSTT}, Skip audio: ${skipAudioSend}`);
 
     // Initialize VAD if enabled and available
     let isVADEnabled = false;
@@ -424,7 +440,9 @@ function setupLinuxSystemAudioProcessing() {
                             const pcmData16 = convertFloat32ToInt16(audioSegment);
                             const base64Data = arrayBufferToBase64(pcmData16.buffer);
 
-                            if (useGroqForSTT) {
+                            if (skipAudioSend) {
+                                // Qwen exam mode: screenshot-based only, drop audio
+                            } else if (useGroqForSTT) {
                                 // Send to Groq for Whisper transcription
                                 await ipcRenderer.invoke('groq-add-audio', { data: base64Data });
                                 // VAD segment sent to Groq
@@ -434,7 +452,6 @@ function setupLinuxSystemAudioProcessing() {
                                     data: base64Data,
                                     mimeType: 'audio/pcm;rate=24000',
                                 });
-                                console.log('VAD audio segment sent to Gemini:', metadata);
                             }
                         } catch (error) {
                             console.error('Failed to send VAD audio segment:', error);
@@ -492,7 +509,9 @@ function setupLinuxSystemAudioProcessing() {
                 const pcmData16 = convertFloat32ToInt16(chunk);
                 const base64Data = arrayBufferToBase64(pcmData16.buffer);
 
-                if (useGroqForSTT) {
+                if (skipAudioSend) {
+                    // Qwen exam mode: screenshot-based only, drop audio
+                } else if (useGroqForSTT) {
                     // Send to Groq for Whisper transcription
                     await ipcRenderer.invoke('groq-add-audio', { data: base64Data });
                 } else {
@@ -518,10 +537,12 @@ function setupWindowsLoopbackProcessing() {
 
     // All interview mode audio goes to Groq Whisper for STT
     const selectedMode = localStorage.getItem('selectedMode') || 'interview';
-    const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
+    const selectedModel = localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
     const useGroqForSTT = selectedMode === 'interview';
+    // Exam mode with Qwen has no Gemini session — audio isn't used there, don't send it anywhere
+    const skipAudioSend = selectedMode === 'coding' && selectedModel === 'qwen-3.6-27b';
 
-    console.log(`[AUDIO] Mode: ${selectedMode}, Model: ${selectedModel}, Using Groq: ${useGroqForSTT}`);
+    console.log(`[AUDIO] Mode: ${selectedMode}, Model: ${selectedModel}, Using Groq: ${useGroqForSTT}, Skip audio: ${skipAudioSend}`);
 
     // Initialize VAD if enabled and available
     let isVADEnabled = false;
@@ -541,7 +562,9 @@ function setupWindowsLoopbackProcessing() {
                             const pcmData16 = convertFloat32ToInt16(audioSegment);
                             const base64Data = arrayBufferToBase64(pcmData16.buffer);
 
-                            if (useGroqForSTT) {
+                            if (skipAudioSend) {
+                                // Qwen exam mode: screenshot-based only, drop audio
+                            } else if (useGroqForSTT) {
                                 // Send to Groq for Whisper transcription
                                 await ipcRenderer.invoke('groq-add-audio', { data: base64Data });
                                 // VAD segment sent to Groq
@@ -551,7 +574,6 @@ function setupWindowsLoopbackProcessing() {
                                     data: base64Data,
                                     mimeType: 'audio/pcm;rate=24000',
                                 });
-                                console.log('VAD audio segment sent to Gemini:', metadata);
                             }
                         } catch (error) {
                             console.error('Failed to send VAD audio segment:', error);
@@ -609,7 +631,9 @@ function setupWindowsLoopbackProcessing() {
                 const pcmData16 = convertFloat32ToInt16(chunk);
                 const base64Data = arrayBufferToBase64(pcmData16.buffer);
 
-                if (useGroqForSTT) {
+                if (skipAudioSend) {
+                    // Qwen exam mode: screenshot-based only, drop audio
+                } else if (useGroqForSTT) {
                     // Send to Groq for Whisper transcription
                     await ipcRenderer.invoke('groq-add-audio', { data: base64Data });
                 } else {
@@ -625,6 +649,19 @@ function setupWindowsLoopbackProcessing() {
 
     source.connect(audioProcessor);
     audioProcessor.connect(audioContext.destination);
+}
+
+// Image tokens scale with RESOLUTION, not JPEG quality — vision models tokenize by pixel
+// dimensions (patches/tiles). So medium/low also downscale the capture; that's what actually
+// cuts prompt tokens (and Groq TPM usage), the compression level only shrinks upload bytes.
+const MAX_CAPTURE_WIDTH = { high: null, medium: 1440, low: 1080 };
+
+function getScaledCaptureSize(videoWidth, videoHeight, imageQuality) {
+    const maxWidth = MAX_CAPTURE_WIDTH[imageQuality] || null;
+    if (!maxWidth || videoWidth <= maxWidth) {
+        return { width: videoWidth, height: videoHeight };
+    }
+    return { width: maxWidth, height: Math.round(videoHeight * (maxWidth / videoWidth)) };
 }
 
 async function captureScreenshot(imageQuality = 'medium', isManual = false) {
@@ -666,7 +703,14 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
         return;
     }
 
-    offscreenContext.drawImage(hiddenVideo, 0, 0, offscreenCanvas.width, offscreenCanvas.height);
+    // Resize canvas per quality level and draw the frame scaled down
+    const captureSize = getScaledCaptureSize(hiddenVideo.videoWidth, hiddenVideo.videoHeight, imageQuality);
+    if (offscreenCanvas.width !== captureSize.width || offscreenCanvas.height !== captureSize.height) {
+        offscreenCanvas.width = captureSize.width;
+        offscreenCanvas.height = captureSize.height;
+        console.log(`[SCREENSHOT] Capture size: ${captureSize.width}x${captureSize.height} (quality: ${imageQuality})`);
+    }
+    offscreenContext.drawImage(hiddenVideo, 0, 0, captureSize.width, captureSize.height);
 
     // Check if image was drawn properly by sampling a pixel
     const imageData = offscreenContext.getImageData(0, 0, 1, 1);
@@ -714,11 +758,12 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
                 }
 
                 // All interview mode manual screenshots go through Groq handler
-                // (groq.js internally routes to Gemini for gemini-2.5-flash-lite)
+                // (groq.js internally routes to Gemini for the Flash Lite models)
+                // Exam mode with Qwen also goes through Groq (Qwen vision handles the screenshot)
                 const selectedMode = localStorage.getItem('selectedMode') || 'interview';
-                const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
+                const selectedModel = localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
                 const selectedProfile = localStorage.getItem('selectedProfile') || 'interview';
-                const useGroq = selectedMode === 'interview' && captureIsManual;
+                const useGroq = (selectedMode === 'interview' && captureIsManual) || (selectedMode === 'coding' && selectedModel === 'qwen-3.6-27b');
 
                 // Profile-aware screenshot prompt — tells the model what context to analyze in
                 const screenshotPrompts = {
@@ -871,7 +916,13 @@ async function sendTextMessage(text) {
             return { success: false, error: 'Video not ready' };
         }
 
-        offscreenContext.drawImage(hiddenVideo, 0, 0, offscreenCanvas.width, offscreenCanvas.height);
+        // Resize canvas per quality level and draw the frame scaled down (same as captureScreenshot)
+        const captureSize = getScaledCaptureSize(hiddenVideo.videoWidth, hiddenVideo.videoHeight, currentImageQuality);
+        if (offscreenCanvas.width !== captureSize.width || offscreenCanvas.height !== captureSize.height) {
+            offscreenCanvas.width = captureSize.width;
+            offscreenCanvas.height = captureSize.height;
+        }
+        offscreenContext.drawImage(hiddenVideo, 0, 0, captureSize.width, captureSize.height);
 
         // Get quality setting (lower values reduce payload for faster API processing)
         let qualityValue;
@@ -907,10 +958,11 @@ async function sendTextMessage(text) {
         });
 
         // All interview mode screenshots go through Groq handler
-        // (groq.js internally routes to Gemini for gemini-2.5-flash-lite)
+        // (groq.js internally routes to Gemini for the Flash Lite models)
+        // Exam mode with Qwen also goes through Groq (Qwen vision handles the screenshot)
         const selectedMode = localStorage.getItem('selectedMode') || 'interview';
-        const selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
-        const useGroq = selectedMode === 'interview';
+        const selectedModel = localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
+        const useGroq = selectedMode === 'interview' || selectedModel === 'qwen-3.6-27b';
 
         let result;
         if (useGroq) {

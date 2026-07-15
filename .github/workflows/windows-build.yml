@@ -1,10 +1,9 @@
 name: CI Desktop
-
 on:
     pull_request:
-        branches: [main]
-    schedule:
-        - cron: '0 2 2 */4 *'
+        branches: [groq, private]
+    push:
+        tags: ['v*']
     workflow_dispatch:
 
 permissions:
@@ -39,10 +38,12 @@ jobs:
             - name: Run tests
               run: npm test
 
-            - name: Build Electron app
-              uses: samuelmeuli/action-electron-builder@v1
+            - name: Build Windows distributables (electron-forge)
+              run: npm run make
+
+            - name: Upload distributables
+              uses: actions/upload-artifact@v4
               with:
-                  release: false
-                  args: -w --x64
-              env:
-                  GH_TOKEN: ${{ secrets.github_token }}
+                  name: windows-build-${{ github.ref_name }}
+                  path: out/make/**
+                  if-no-files-found: error

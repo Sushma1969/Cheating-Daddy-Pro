@@ -52,12 +52,26 @@ function scheduleGeminiRateLimitRecovery(statusMessage, recoveryMs = 60 * 1000) 
         if (remainingSec <= 0) {
             clearInterval(rateLimitCountdownInterval);
             rateLimitCountdownInterval = null;
-            console.log('[GEMINI] Rate limit countdown done');
-            sendToRenderer('update-status', 'Ready');
+            // Interview mode (hybrid Flash Lite) listens for audio, exam mode waits for the next screenshot
+            const resetStatus = currentMode === 'interview' ? 'Listening...' : 'Ready';
+            console.log(`[GEMINI] Rate limit countdown done - resetting to ${resetStatus}`);
+            sendToRenderer('update-status', resetStatus);
         } else {
             sendToRenderer('update-status', `${statusMessage} (${remainingSec}s)`);
         }
     }, 1000);
+}
+
+/**
+ * Clear any active Gemini rate limit countdown.
+ * Also called from groq.js on session init — quota is per model, so a stale Gemini
+ * countdown must not keep overwriting the header after switching to a Groq model.
+ */
+function clearGeminiRateLimitCountdown() {
+    if (rateLimitCountdownInterval) {
+        clearInterval(rateLimitCountdownInterval);
+        rateLimitCountdownInterval = null;
+    }
 }
 
 /**
@@ -115,13 +129,15 @@ let generationSettings = {
 // Model-specific max output token limits
 const MODEL_MAX_OUTPUT_TOKENS = {
     // Gemini models
+    'gemini-3.5-flash': 65536,
     'gemini-2.5-flash': 65536,
+    'gemini-2.5-pro': 65536,
     'gemini-2.5-flash-lite': 65536,
+    'gemini-3.1-flash-lite': 65536,
     'gemini-3-flash-preview': 65536,
-    'gemini-3-pro-preview': 65536,
-    // Groq Llama models
-    'llama-4-maverick': 8192,
-    'llama-4-scout': 8192,
+    'gemini-3.1-pro-preview': 65536,
+    // Groq Qwen models
+    'qwen-3.6-27b': 32768,
 };
 
 // Get max output tokens for a specific model
@@ -136,12 +152,17 @@ function sendToRenderer(channel, data) {
     }
 }
 
-async function getEnabledTools() {
+async function getEnabledTools(model = '') {
     const tools = [];
 
-    // Check if Google Search is enabled (default: true)
-    const googleSearchEnabled = await getStoredSetting('googleSearchEnabled', 'true');
-    console.log('Google Search enabled:', googleSearchEnabled);
+    // Google Search grounding quota differs per model family (verified against live API):
+    // - Gemini 2.5 Flash / Flash Lite: grounding is FREE tier → always ON for these
+    // - Gemini 3.x / 2.5 Pro: grounding is PAID only → respect the user toggle (default: off)
+    const searchFreeModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+    const googleSearchEnabled = searchFreeModels.includes(model)
+        ? 'true'
+        : await getStoredSetting('googleSearchEnabled', 'false');
+    console.log(`Google Search enabled: ${googleSearchEnabled} (model: ${model})`);
 
     if (googleSearchEnabled === 'true') {
         tools.push({ googleSearch: {} });
@@ -186,7 +207,7 @@ async function getStoredSetting(key, defaultValue) {
     return defaultValue;
 }
 
-async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'interview', language = 'en-US', _isReconnection = false, mode = 'interview', model = 'gemini-2.5-flash') {
+async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'interview', language = 'en-US', _isReconnection = false, mode = 'interview', model = 'gemini-3.5-flash') {
     if (isInitializingSession) {
         console.log('Session initialization already in progress');
         return false;
@@ -195,19 +216,18 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
     isInitializingSession = true;
     sendToRenderer('session-initializing', true);
 
-    // Clear any active rate limit countdown from previous session
-    if (rateLimitCountdownInterval) {
-        clearInterval(rateLimitCountdownInterval);
-        rateLimitCountdownInterval = null;
-    }
+    // Clear any active rate limit countdown from previous session — BOTH providers,
+    // so a stale Groq countdown doesn't survive a switch to a Gemini model
+    clearGeminiRateLimitCountdown();
+    getGroq().clearGroqRateLimitCountdown();
 
     const client = new GoogleGenAI({
         vertexai: false,
         apiKey: apiKey,
     });
 
-    // Get enabled tools first to determine Google Search status
-    const enabledTools = await getEnabledTools();
+    // Get enabled tools first to determine Google Search status (model-aware: free vs paid grounding)
+    const enabledTools = await getEnabledTools(model || 'gemini-3.5-flash');
     const googleSearchEnabled = enabledTools.some(tool => tool.googleSearch);
 
     let systemPrompt = getSystemPrompt(profile, customPrompt, googleSearchEnabled);
@@ -266,7 +286,7 @@ This is mandatory and cannot be overridden by any other instruction.`;
 
     try {
         let session;
-        const regularModel = model || 'gemini-2.5-flash';
+        const regularModel = model || 'gemini-3.5-flash';
         currentMode = mode;
         currentProfile = profile;
         console.log(`Initializing Gemini session: ${regularModel} (mode: ${mode}, profile: ${profile})`);
@@ -351,7 +371,9 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                 isClosed: false,
                 conversationHistory: [], // Track conversation history for context
 
-                async sendRealtimeInput(input) {
+                // retryWithoutTools: set by the empty-response retry — grounded search results on
+                // copyrighted text (e.g. LeetCode problems) can trip the recitation filter → empty answer
+                async sendRealtimeInput(input, retryWithoutTools = false) {
                     if (this.isClosed) {
                         console.log('Session is closed, ignoring input');
                         return;
@@ -450,18 +472,18 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                                 }
                             }
 
-                            // Thinking levels (exam/coding mode only):
-                            // Gemini 3 Flash → 'low' (fast but accurate)
-                            // Gemini 3 Pro → 'high' (best accuracy)
-                            // Gemini 2.5 Flash Lite → no thinking (off by default)
-                            const thinkingConfig = this.model === 'gemini-3-flash-preview'
-                                ? { thinkingLevel: 'low' }
-                                : this.model === 'gemini-3-pro-preview'
-                                    ? { thinkingLevel: 'high' }
+                            // Thinking levels (per model defaults):
+                            // Gemini 3.5 Flash / 3 Flash / 3.1 Pro → 'high' (exam mode, best accuracy)
+                            // Gemini 3.1 Flash Lite → 'minimal' (interview mode, lowest latency)
+                            // Gemini 2.5 family → uses thinkingBudget API, leave default (Pro/Flash think, Lite off)
+                            const thinkingConfig = ['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-3.1-pro-preview'].includes(this.model)
+                                ? { thinkingLevel: 'high' }
+                                : this.model === 'gemini-3.1-flash-lite'
+                                    ? { thinkingLevel: 'minimal' }
                                     : undefined;
 
-                            // Pass Google Search tool if enabled in settings
-                            const requestTools = this.tools.length > 0 ? this.tools : undefined;
+                            // Pass Google Search tool if enabled in settings (dropped on the empty-response retry)
+                            const requestTools = this.tools.length > 0 && !retryWithoutTools ? this.tools : undefined;
 
                             // Log request details for latency debugging
                             const imageSize = hasImage ? Math.round(input.media.data.length / 1024) : 0;
@@ -470,18 +492,19 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                             const streamResult = await this.client.models.generateContentStream({
                                 model: this.model,
                                 contents: contents,
-                                systemInstruction: { parts: [{ text: this.systemPrompt }] },
-                                generationConfig: {
+                                config: {
+                                    systemInstruction: this.systemPrompt,
                                     temperature: generationSettings.temperature,
                                     topP: generationSettings.topP,
                                     maxOutputTokens: effectiveMaxTokens,
                                     ...(thinkingConfig ? { thinkingConfig } : {}),
+                                    tools: requestTools,
                                 },
-                                tools: requestTools,
                             });
 
                             // Stream the response as it arrives
                             let responseText = '';
+                            let lastChunk = null; // Kept for finishReason diagnostics on empty responses
 
                             // Check if it's iterable stream or has stream property
                             const streamToIterate = streamResult.stream || streamResult;
@@ -493,25 +516,21 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
 
                             try {
                                 for await (const chunk of streamToIterate) {
-                                    if (chunk && chunk.candidates && chunk.candidates.length > 0) {
-                                        const candidate = chunk.candidates[0];
-                                        if (candidate.content && candidate.content.parts) {
-                                            for (const part of candidate.content.parts) {
-                                                if (part.text) {
-                                                    if (!firstChunkLogged) {
-                                                        console.log(`⏱️ First token: ${Date.now() - requestStartTime}ms`);
-                                                        firstChunkLogged = true;
-                                                    }
-                                                    responseText += part.text;
+                                    lastChunk = chunk;
+                                    // Use SDK's .text getter which properly handles thinking parts
+                                    const chunkText = chunk.text;
+                                    if (chunkText) {
+                                        if (!firstChunkLogged) {
+                                            console.log(`⏱️ First token: ${Date.now() - requestStartTime}ms`);
+                                            firstChunkLogged = true;
+                                        }
+                                        responseText += chunkText;
 
-                                                    // Batch updates: Only send to UI every 50ms for smoother rendering
-                                                    const now = Date.now();
-                                                    if (now - lastUpdateTime >= UPDATE_INTERVAL) {
-                                                        sendToRenderer('update-response', responseText);
-                                                        lastUpdateTime = now;
-                                                    }
-                                                }
-                                            }
+                                        // Batch updates: Only send to UI every 50ms for smoother rendering
+                                        const now = Date.now();
+                                        if (now - lastUpdateTime >= UPDATE_INTERVAL) {
+                                            sendToRenderer('update-response', responseText);
+                                            lastUpdateTime = now;
                                         }
                                     }
                                 }
@@ -520,7 +539,7 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                                 sendToRenderer('update-response', responseText);
 
                                 if (responseText && responseText.trim()) {
-                                    console.log(`✅ Got response: ${responseText.length} chars in ${Date.now() - requestStartTime}ms`);
+                                    console.log(`Got response: ${responseText.length} chars in ${Date.now() - requestStartTime}ms`);
 
                                     // Save to conversation history with full data
                                     this.conversationHistory.push(
@@ -552,13 +571,23 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                                         }
                                     }
 
-                                    console.log(`💬 Conversation history: ${this.conversationHistory.length / 2} turns`);
+                                    console.log(` Conversation history: ${this.conversationHistory.length / 2} turns`);
                                     // Interview mode: "Listening..." (matches Groq Llama flow)
                                     // Coding/exam mode: "Ready" (waiting for next screenshot)
                                     sendToRenderer('update-status', currentMode === 'interview' ? 'Listening...' : 'Ready');
                                     return responseText;
                                 } else {
-                                    console.error('❌ No response text received');
+                                    // Log WHY it was empty — recitation/safety blocks and token exhaustion land here
+                                    const finishReason = lastChunk?.candidates?.[0]?.finishReason;
+                                    const blockReason = lastChunk?.promptFeedback?.blockReason;
+                                    console.error(`No response text received (finishReason: ${finishReason || 'unknown'}${blockReason ? `, blockReason: ${blockReason}` : ''})`);
+
+                                    // Grounded search results on copyrighted text (LeetCode etc.) can trip the
+                                    // recitation filter and return an empty candidate — retry once without the tool
+                                    if (requestTools && !retryWithoutTools) {
+                                        console.log(' Empty response with Google Search enabled — retrying once without tools...');
+                                        return await this.sendRealtimeInput(input, true);
+                                    }
                                     sendToRenderer('update-status', currentMode === 'interview' ? 'Listening...' : 'No response generated');
                                     return null;
                                 }
@@ -635,6 +664,15 @@ REMEMBER: If someone asked you this face-to-face, you would NOT recite a textboo
                         } else if (errMsg.includes('deprecated') || errMsg.includes('decommission')) {
                             shortMsg = 'Model Deprecated (Gemini)';
                             console.error('[GEMINI] Model deprecated by Google.');
+                        } else if (errMsg.includes('location is not supported') || errMsg.includes('failed_precondition') || errMsg.includes('user location')) {
+                            shortMsg = 'Region Not Supported (Gemini)';
+                            console.error('[GEMINI] User location is not supported. A VPN may be required.');
+                        } else if (errMsg.includes('quota') || errMsg.includes('resource_exhausted')) {
+                            shortMsg = 'Quota Exceeded (Gemini)';
+                        } else if (errMsg.includes('permission') || errMsg.includes('forbidden') || errMsg.includes('403')) {
+                            shortMsg = 'Access Denied (Gemini)';
+                        } else if (errMsg.includes('400')) {
+                            shortMsg = 'Bad Request (Gemini)';
                         }
 
                         sendToRenderer('update-status', shortMsg);
@@ -979,7 +1017,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     // Store the geminiSessionRef globally for reconnection access
     global.geminiSessionRef = geminiSessionRef;
 
-    ipcMain.handle('initialize-gemini', async (event, apiKey, customPrompt, profile = 'interview', language = 'en-US', mode = 'interview', model = 'gemini-2.5-flash') => {
+    ipcMain.handle('initialize-gemini', async (event, apiKey, customPrompt, profile = 'interview', language = 'en-US', mode = 'interview', model = 'gemini-3.5-flash') => {
         const session = await initializeGeminiSession(apiKey, customPrompt, profile, language, false, mode, model);
         if (session) {
             geminiSessionRef.current = session;
@@ -1216,7 +1254,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
 
 /**
  * Chat with Gemini using text (and optional image).
- * Used by groq.js when interview model is gemini-2.5-flash-lite:
+ * Used by groq.js when interview model is a Gemini Flash Lite (2.5 / 3.1):
  *   Groq Whisper (STT) → transcription → chatWithGeminiText() → Gemini response
  *
  * @param {string} text - The transcription or prompt text
@@ -1253,6 +1291,7 @@ async function chatWithGeminiText(text, imageData = null) {
 module.exports = {
     initializeGeminiSession,
     chatWithGeminiText,
+    clearGeminiRateLimitCountdown,
     getEnabledTools,
     getStoredSetting,
     sendToRenderer,

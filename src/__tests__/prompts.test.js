@@ -91,10 +91,11 @@ describe('Prompt System Tests', () => {
         it('specifies 5-section structure', () => {
             const outputInstructions = profilePrompts.interview.outputInstructions;
 
+            expect(outputInstructions).toContain('MANDATORY 5-SECTION FORMAT');
             expect(outputInstructions).toContain('Approach');
             expect(outputInstructions).toContain('Intuition');
             expect(outputInstructions).toContain('Implementation');
-            expect(outputInstructions).toContain('Complexity Analysis');
+            expect(outputInstructions).toContain('Complexity');
             expect(outputInstructions).toContain('Algorithm');
         });
 

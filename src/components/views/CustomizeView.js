@@ -484,8 +484,9 @@ export class CustomizeView extends LitElement {
         this.onLayoutModeChange = () => {};
         this.onAdvancedModeChange = () => {};
 
-        // Google Search default
-        this.googleSearchEnabled = true;
+        // Google Search default — OFF (grounding is paid-only on Gemini 3.x / 2.5 Pro;
+        // for Gemini 2.5 Flash models it's free and forced ON in gemini.js regardless of this toggle)
+        this.googleSearchEnabled = false;
 
         // Advanced mode default
         this.advancedMode = false;
@@ -502,7 +503,7 @@ export class CustomizeView extends LitElement {
 
         // Mode and model selection defaults
         this.selectedMode = 'interview';
-        this.selectedModel = 'llama-4-maverick';
+        this.selectedModel = 'qwen-3.6-27b';
 
         this.loadKeybinds();
         this.loadGoogleSearchSettings();
@@ -629,12 +630,12 @@ export class CustomizeView extends LitElement {
             localStorage.setItem('selectedMode', 'coding');
 
             // Restore last-used coding model, or validate current one
-            const validCodingModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3-pro-preview'];
+            const validCodingModels = ['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash', 'qwen-3.6-27b'];
             const lastCodingModel = localStorage.getItem('lastModel_coding');
             if (lastCodingModel && validCodingModels.includes(lastCodingModel)) {
                 this.selectedModel = lastCodingModel;
             } else if (!validCodingModels.includes(this.selectedModel)) {
-                this.selectedModel = 'gemini-2.5-flash';
+                this.selectedModel = 'gemini-3.5-flash';
             }
         } else {
             // Save current model for coding mode before switching
@@ -646,12 +647,12 @@ export class CustomizeView extends LitElement {
             localStorage.setItem('selectedMode', 'interview');
 
             // Restore last-used interview model, or validate current one
-            const validInterviewModels = ['gemini-2.5-flash-lite', 'llama-4-maverick', 'llama-4-scout'];
+            const validInterviewModels = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'qwen-3.6-27b'];
             const lastInterviewModel = localStorage.getItem('lastModel_interview');
             if (lastInterviewModel && validInterviewModels.includes(lastInterviewModel)) {
                 this.selectedModel = lastInterviewModel;
             } else if (!validInterviewModels.includes(this.selectedModel)) {
-                this.selectedModel = 'llama-4-maverick';
+                this.selectedModel = 'qwen-3.6-27b';
             }
         }
 
@@ -1092,27 +1093,49 @@ export class CustomizeView extends LitElement {
         const selectedModel = localStorage.getItem('selectedModel');
 
         this.selectedMode = selectedMode || 'interview';
-        this.selectedModel = selectedModel || 'llama-4-maverick';
+        this.selectedModel = selectedModel || 'qwen-3.6-27b';
 
         // Validate stored model is valid for the current mode
         if (this.selectedMode === 'interview') {
-            const validInterviewModels = ['gemini-2.5-flash-lite', 'llama-4-maverick', 'llama-4-scout'];
+            const validInterviewModels = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'qwen-3.6-27b'];
             if (!validInterviewModels.includes(this.selectedModel)) {
-                this.selectedModel = 'llama-4-maverick';
+                this.selectedModel = 'qwen-3.6-27b';
                 localStorage.setItem('selectedModel', this.selectedModel);
             }
         } else {
-            const validCodingModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3-pro-preview'];
+            const validCodingModels = ['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash', 'qwen-3.6-27b'];
             if (!validCodingModels.includes(this.selectedModel)) {
-                this.selectedModel = 'gemini-2.5-flash';
+                this.selectedModel = 'gemini-3.5-flash';
                 localStorage.setItem('selectedModel', this.selectedModel);
             }
         }
     }
 
-    // Helper to check if selected model is a Groq/Llama model
+    // Helper to check if selected model is a Groq model (Qwen)
     isGroqModel(model) {
-        return model && (model.includes('llama') || model.includes('groq'));
+        return model && (model.includes('qwen') || model.includes('groq'));
+    }
+
+    // Google Search toggle visibility:
+    // - Gemini 2.5 Flash / Flash Lite: hidden — grounding is free tier there, always ON (forced in gemini.js)
+    // - Qwen (Groq): hidden — Groq has no Google Search support
+    // - Gemini 3.x / 2.5 Pro: shown — grounding needs a paid API key, default OFF
+    showGoogleSearchToggle() {
+        const searchAlwaysOn = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+        return !searchAlwaysOn.includes(this.selectedModel) && !this.isGroqModel(this.selectedModel);
+    }
+
+    // Description for the exam/coding mode model dropdown
+    getCodingModelDescription() {
+        const descriptions = {
+            'gemini-3.5-flash': 'Gemini 3.5 Flash: Newest flagship model. Frontier intelligence at Flash speed, best all-rounder for assessments. Free tier.',
+            'gemini-3-flash-preview': 'Gemini 3 Flash Preview: Pro-level intelligence at Flash speed. Free tier.',
+            'gemini-3.1-pro-preview': 'Gemini 3.1 Pro Preview: Most accurate and detailed responses, better for complex problems. Requires a PAID Gemini API key.',
+            'gemini-2.5-pro': 'Gemini 2.5 Pro: Deep reasoning for complex problems. Requires a PAID Gemini API key.',
+            'gemini-2.5-flash': 'Gemini 2.5 Flash: Fast and balanced, with Google Search grounding included FREE (always on).',
+            'qwen-3.6-27b': 'Qwen 3.6 27B via Groq: Vision + thinking mode for accurate screenshot answers. Requires Groq API key only.',
+        };
+        return descriptions[this.selectedModel] || '';
     }
 
     async handleModeChange(e) {
@@ -1125,23 +1148,23 @@ export class CustomizeView extends LitElement {
             // Save current model for coding mode before switching
             localStorage.setItem('lastModel_coding', this.selectedModel);
 
-            const validInterviewModels = ['gemini-2.5-flash-lite', 'llama-4-maverick', 'llama-4-scout'];
+            const validInterviewModels = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'qwen-3.6-27b'];
             const lastInterviewModel = localStorage.getItem('lastModel_interview');
             if (lastInterviewModel && validInterviewModels.includes(lastInterviewModel)) {
                 this.selectedModel = lastInterviewModel;
             } else if (!validInterviewModels.includes(this.selectedModel)) {
-                this.selectedModel = 'llama-4-maverick';
+                this.selectedModel = 'qwen-3.6-27b';
             }
         } else {
             // Save current model for interview mode before switching
             localStorage.setItem('lastModel_interview', this.selectedModel);
 
-            const validCodingModels = ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3-pro-preview'];
+            const validCodingModels = ['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash', 'qwen-3.6-27b'];
             const lastCodingModel = localStorage.getItem('lastModel_coding');
             if (lastCodingModel && validCodingModels.includes(lastCodingModel)) {
                 this.selectedModel = lastCodingModel;
             } else if (!validCodingModels.includes(this.selectedModel)) {
-                this.selectedModel = 'gemini-3-pro-preview';
+                this.selectedModel = 'gemini-3.1-pro-preview';
             }
         }
         localStorage.setItem('selectedModel', this.selectedModel);
@@ -1236,19 +1259,16 @@ export class CustomizeView extends LitElement {
                                     <custom-dropdown
                                         .value=${this.selectedModel}
                                         .options=${[
-                                            { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Faster, Balanced)', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
+                                            { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash (Newest, Fast & Smart)', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
                                             { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview (Fast, Smart)', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
-                                            { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview (Slower, Most Accurate)', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' }
+                                            { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview (Most Accurate, Paid)', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
+                                            { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Deep Reasoning, Paid)', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
+                                            { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Free,Google Search)', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
+                                            { value: 'qwen-3.6-27b', label: 'Qwen 3.6 27B (Groq, Thinking)', icon: './assets/models/qwen_logo.webp' }
                                         ]}
                                         @change=${e => this.handleModelChange({ target: { value: e.detail.value } })}
                                     ></custom-dropdown>
-                                    <div class="form-description">
-                                        ${this.selectedModel === 'gemini-2.5-flash'
-                                            ? 'Gemini 2.5 Flash: Faster responses, good for time-sensitive coding assessments.'
-                                            : this.selectedModel === 'gemini-3-flash-preview'
-                                                ? 'Gemini 3 Flash Preview: Pro-level intelligence at Flash speed. Low thinking for fastest responses.'
-                                                : 'Gemini 3 Pro Preview: Most accurate and detailed responses, better for complex problems.'}
-                                    </div>
+                                    <div class="form-description">${this.getCodingModelDescription()}</div>
                                 </div>
                             </div>
                         ` : html`
@@ -1270,17 +1290,44 @@ export class CustomizeView extends LitElement {
                                         .value=${this.selectedModel}
                                         .options=${[
                                             { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
-                                            { value: 'llama-4-maverick', label: 'Llama 4 Maverick 17B', icon: './assets/models/metalogo.dcf881ba.svg' },
-                                            { value: 'llama-4-scout', label: 'Llama 4 Scout 17B', icon: './assets/models/metalogo.dcf881ba.svg' }
+                                            { value: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', icon: './assets/models/500px-Google_Gemini_icon_2025.svg.png' },
+                                            { value: 'qwen-3.6-27b', label: 'Qwen 3.6 27B', icon: './assets/models/qwen_logo.webp' }
                                         ]}
                                         @change=${e => this.handleModelChange({ target: { value: e.detail.value } })}
                                     ></custom-dropdown>
-                                    <div class="form-description">${this.selectedModel === 'gemini-2.5-flash-lite' ? 'Groq Whisper STT + Gemini 2.5 Flash Lite for fast responses. Requires both Groq and Gemini API keys.' : this.selectedModel === 'llama-4-maverick' ? 'Groq Whisper STT + Llama 4 Maverick for fast interview responses. Requires Groq API key.' : 'Groq Whisper STT + Llama 4 Scout for efficient interview responses. Requires Groq API key.'}</div>
+                                    <div class="form-description">${this.selectedModel === 'gemini-2.5-flash-lite' ? 'Groq Whisper STT + Gemini 2.5 Flash Lite for fast responses. Requires both Groq and Gemini API keys.' : this.selectedModel === 'gemini-3.1-flash-lite' ? 'Groq Whisper STT + Gemini 3.1 Flash Lite (newer, sharper) for fast responses. Requires both Groq and Gemini API keys.' : 'Groq Whisper STT + Qwen 3.6 27B for fast interview responses with vision support. Requires Groq API key.'}</div>
                                 </div>
                             </div>
                         `}
                     </div>
                 </div>
+
+                <!-- Google Search Section (kept right below Application Mode so it's visible without scrolling) -->
+                <!-- Hidden for Gemini 2.5 Flash models (grounding is free tier, always on) and Qwen (no search on Groq) -->
+                ${this.showGoogleSearchToggle() ? html`
+                <div class="settings-section">
+                    <div class="section-title">
+                        <span>Google Search</span>
+                    </div>
+
+                    <div class="form-grid">
+                        <div class="checkbox-group">
+                            <input
+                                type="checkbox"
+                                class="checkbox-input"
+                                id="google-search-enabled"
+                                .checked=${this.googleSearchEnabled}
+                                @change=${this.handleGoogleSearchChange}
+                            />
+                            <label for="google-search-enabled" class="checkbox-label"> Enable Google Search </label>
+                        </div>
+                        <div class="form-description" style="margin-left: 24px; margin-top: -8px;">
+                            Allow the AI to search Google for up-to-date information and facts during conversations
+                            <br /><strong>Note:</strong> On this model, Google Search grounding needs a <strong>Paid</strong> Gemini API keys.
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
 
                 <!-- Audio Section -->
                 <div class="settings-section">
@@ -1513,30 +1560,6 @@ export class CustomizeView extends LitElement {
                 </div>
 
 
-
-                <!-- Google Search Section -->
-                <div class="settings-section">
-                    <div class="section-title">
-                        <span>Google Search</span>
-                    </div>
-
-                    <div class="form-grid">
-                        <div class="checkbox-group">
-                            <input
-                                type="checkbox"
-                                class="checkbox-input"
-                                id="google-search-enabled"
-                                .checked=${this.googleSearchEnabled}
-                                @change=${this.handleGoogleSearchChange}
-                            />
-                            <label for="google-search-enabled" class="checkbox-label"> Enable Google Search </label>
-                        </div>
-                        <div class="form-description" style="margin-left: 24px; margin-top: -8px;">
-                            Allow the AI to search Google for up-to-date information and facts during conversations
-                            <br /><strong>Note:</strong> Changes take effect when starting a new AI session
-                        </div>
-                    </div>
-                </div>
 
                 <div class="settings-note">
                     💡 Settings are automatically saved as you change them. Changes will take effect immediately or on the next session start.

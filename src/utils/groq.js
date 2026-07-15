@@ -1,18 +1,19 @@
-// groq.js - Groq API integration for Speech-to-Text (Whisper) and Chat Completion (Llama models)
+// groq.js - Groq API integration for Speech-to-Text (Whisper) and Chat Completion (Qwen models)
 const { BrowserWindow, ipcMain } = require('electron');
 const https = require('https');
 const { URL } = require('url');
-const { getCondensedSystemPrompt } = require('./prompts');
-const { chatWithGeminiText } = require('./gemini');
+const { getCondensedSystemPrompt, getSystemPrompt, getExamMessageHint } = require('./prompts');
+const { chatWithGeminiText, clearGeminiRateLimitCountdown } = require('./gemini');
 
 // Groq API configuration
 const GROQ_API_BASE = 'https://api.groq.com/openai/v1';
 const WHISPER_MODEL = 'whisper-large-v3-turbo';
 
-// Available Llama models for chat completion
-const LLAMA_MODELS = {
-    'llama-4-maverick': 'meta-llama/llama-4-maverick-17b-128e-instruct',
-    'llama-4-scout': 'meta-llama/llama-4-scout-17b-16e-instruct'
+// Available Groq models for chat completion
+// Qwen 3.6 27B replaced Llama 4 Maverick/Scout (both deprecated by Groq in 2026)
+// It's the only vision-capable Groq model, needed for screenshot analysis (max 3 images/request)
+const GROQ_CHAT_MODELS = {
+    'qwen-3.6-27b': 'qwen/qwen3.6-27b'
 };
 
 // Audio buffer for accumulating audio chunks before sending to Groq
@@ -48,7 +49,10 @@ let checkTimer = null;
 const CHECK_INTERVAL_MS = 500; // Check every 500ms for faster response
 
 // Store selected model for chat completion
-let selectedLlamaModel = 'llama-4-maverick';
+let selectedGroqModel = 'qwen-3.6-27b';
+
+// Track mode: 'interview' (audio + concise answers) or 'exam' (screenshot-based, thinking ON)
+let currentGroqMode = 'interview';
 
 // Rate limit countdown - auto-reset status after 429 errors with live countdown in header
 let rateLimitCountdownInterval = null;
@@ -94,12 +98,26 @@ function scheduleRateLimitRecovery(statusMessage, recoveryMs = 30 * 1000) {
         if (remainingSec <= 0) {
             clearInterval(rateLimitCountdownInterval);
             rateLimitCountdownInterval = null;
-            console.log('[GROQ] Rate limit countdown done - resetting to Listening...');
-            sendToRenderer('update-status', 'Listening...');
+            // Interview mode listens for audio, exam mode waits for the next screenshot
+            const resetStatus = currentGroqMode === 'exam' ? 'Ready' : 'Listening...';
+            console.log(`[GROQ] Rate limit countdown done - resetting to ${resetStatus}`);
+            sendToRenderer('update-status', resetStatus);
         } else {
             sendToRenderer('update-status', `${statusMessage} (${remainingSec}s)`);
         }
     }, 1000);
+}
+
+/**
+ * Clear any active Groq rate limit countdown.
+ * Also called from gemini.js on session init — quota is per model, so a stale Groq
+ * countdown must not keep overwriting the header after switching to a Gemini model.
+ */
+function clearGroqRateLimitCountdown() {
+    if (rateLimitCountdownInterval) {
+        clearInterval(rateLimitCountdownInterval);
+        rateLimitCountdownInterval = null;
+    }
 }
 
 /**
@@ -165,21 +183,25 @@ function calculateRMS(pcmBuffer) {
 /**
  * Initialize Groq API with the provided API key
  */
-function initializeGroq(apiKey, customPrompt = '', profile = 'interview', language = 'en-US', model = 'llama-4-maverick') {
+function initializeGroq(apiKey, customPrompt = '', profile = 'interview', language = 'en-US', model = 'qwen-3.6-27b') {
     groqApiKey = apiKey;
     conversationHistory = [];
-    selectedLlamaModel = model;
-    console.log(`[GROQ] Chat model set to: ${selectedLlamaModel}`);
+    selectedGroqModel = model;
+    console.log(`[GROQ] Chat model set to: ${selectedGroqModel}`);
 
-    // Clear any active rate limit countdown from previous session
-    if (rateLimitCountdownInterval) {
-        clearInterval(rateLimitCountdownInterval);
-        rateLimitCountdownInterval = null;
+    // Clear any active rate limit countdown from previous session — BOTH providers,
+    // so a stale Gemini countdown doesn't survive a switch to Qwen (quota is per model)
+    clearGroqRateLimitCountdown();
+    clearGeminiRateLimitCountdown();
+
+    // Exam mode: use the SAME full exam prompt the Gemini models follow (compact enough for Groq)
+    // Interview mode: use CONDENSED prompt (high request rate, full interview prompt ~27KB is too heavy)
+    currentGroqMode = profile === 'exam' ? 'exam' : 'interview';
+    if (currentGroqMode === 'exam') {
+        currentSystemPrompt = getSystemPrompt(profile, customPrompt, false); // false = no Google Search on Groq
+    } else {
+        currentSystemPrompt = getCondensedSystemPrompt(profile, customPrompt);
     }
-
-    // Use CONDENSED system prompt for Groq (strict HTTP body size limit ~20KB)
-    // Full prompt is ~27KB which exceeds Groq's limit
-    currentSystemPrompt = getCondensedSystemPrompt(profile, customPrompt);
 
     // Add language instruction - matches Gemini's full language support
     const languageMap = {
@@ -323,6 +345,15 @@ async function transcribeWithGroq(wavBuffer) {
                     } else if (res.statusCode === 413) {
                         sendToRenderer('update-status', 'Audio too long');
                         reject(new Error('Audio too long'));
+                    } else if (res.statusCode === 403) {
+                        const errLower = data.toLowerCase();
+                        if (errLower.includes('location') || errLower.includes('region') || errLower.includes('country')) {
+                            sendToRenderer('update-status', 'Region Not Supported (Groq)');
+                            reject(new Error('Region Not Supported (Groq)'));
+                        } else {
+                            sendToRenderer('update-status', 'Access Denied (Groq)');
+                            reject(new Error('Access Denied (Groq)'));
+                        }
                     } else if (res.statusCode === 400) {
                         sendToRenderer('update-status', 'Invalid request');
                         reject(new Error('Invalid request'));
@@ -348,16 +379,19 @@ async function transcribeWithGroq(wavBuffer) {
 }
 
 /**
- * Send chat completion request to Groq Llama model
+ * Send chat completion request to Groq chat model (Qwen)
+ * maxTokensOverride: set by the 413 auto-retry to shrink max_tokens into the TPM window
+ * forceNoThink: set by the empty-answer retry when thinking consumed the whole token budget
  */
-async function chatWithLlama(userMessage, model = 'llama-4-maverick', imageData = null) {
+async function chatWithGroq(userMessage, model = 'qwen-3.6-27b', imageData = null, maxTokensOverride = null, forceNoThink = false) {
     return new Promise((resolve, reject) => {
         if (!groqApiKey) {
             reject(new Error('Groq API key not initialized'));
             return;
         }
 
-        const modelId = LLAMA_MODELS[model] || LLAMA_MODELS['llama-4-maverick'];
+        const modelId = GROQ_CHAT_MODELS[model] || GROQ_CHAT_MODELS['qwen-3.6-27b'];
+        const isQwen = modelId.startsWith('qwen/');
 
         // Build messages array with conversation history
         const messages = [
@@ -384,13 +418,29 @@ async function chatWithLlama(userMessage, model = 'llama-4-maverick', imageData 
             messages.push({ role: 'user', content: userMessage });
         }
 
+        // Qwen 3.6 dual-mode reasoning (per Groq/Qwen docs):
+        // Interview → thinking OFF ('none') for low-latency replies
+        // Exam → thinking ON ('default'); 'parsed' streams reasoning in a separate delta.reasoning
+        // field so we can show "Thinking..." progress while keeping it out of the response
+        // (Mode-specific sampling temps are set via AdvancedView defaults)
+        const qwenParams = isQwen
+            ? (currentGroqMode === 'exam' && !forceNoThink
+                ? { reasoning_effort: 'default', reasoning_format: 'parsed' }
+                : { reasoning_effort: 'none' })
+            : {};
+
+        // Groq counts input tokens + max_tokens against the TPM limit (free tier: 8000 for Qwen),
+        // so max_tokens must stay modest — the 413 auto-retry below shrinks it further if needed
+        const effectiveMaxTokens = maxTokensOverride || generationSettings.maxOutputTokens;
+
         let requestBody = JSON.stringify({
             model: modelId,
             messages: messages,
             temperature: generationSettings.temperature,
             top_p: generationSettings.topP,
-            max_tokens: generationSettings.maxOutputTokens,
-            stream: true
+            max_tokens: effectiveMaxTokens,
+            stream: true,
+            ...qwenParams
         });
 
         // Log request size for debugging
@@ -426,8 +476,9 @@ async function chatWithLlama(userMessage, model = 'llama-4-maverick', imageData 
                 messages: trimmedMessages,
                 temperature: generationSettings.temperature,
                 top_p: generationSettings.topP,
-                max_tokens: generationSettings.maxOutputTokens,
-                stream: true
+                max_tokens: effectiveMaxTokens,
+                stream: true,
+                ...qwenParams
             });
             requestSizeKB = (Buffer.byteLength(requestBody) / 1024).toFixed(1);
             console.log(`[GROQ] Trimmed request size: ${requestSizeKB}KB`);
@@ -449,26 +500,55 @@ async function chatWithLlama(userMessage, model = 'llama-4-maverick', imageData 
 
         let responseText = '';
         let rawErrorBody = '';
+        let sseBuffer = ''; // SSE lines can split across TCP chunks — buffer incomplete lines
+        let reasoningChars = 0;
+        let thinkingStatusSent = false;
+        let firstTokenLogged = false;
+        const requestStartTime = Date.now();
+        let lastActivityTime = Date.now();
 
         const req = https.request(options, (res) => {
             res.on('data', (chunk) => {
+                lastActivityTime = Date.now();
                 if (res.statusCode !== 200) {
                     // Accumulate error response body for detailed error messages
                     rawErrorBody += chunk.toString();
                     return;
                 }
-                const lines = chunk.toString().split('\n');
+                sseBuffer += chunk.toString();
+                const lines = sseBuffer.split('\n');
+                sseBuffer = lines.pop(); // keep the (possibly incomplete) last line for the next chunk
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
                         const data = line.slice(6);
                         if (data === '[DONE]') continue;
                         try {
                             const parsed = JSON.parse(data);
-                            const content = parsed.choices?.[0]?.delta?.content;
+                            const delta = parsed.choices?.[0]?.delta;
+                            // Qwen reasoning streams separately (parsed format) — show progress, never render it
+                            if (delta?.reasoning) {
+                                reasoningChars += delta.reasoning.length;
+                                if (!thinkingStatusSent) {
+                                    thinkingStatusSent = true;
+                                    console.log(`[GROQ] Model started thinking (${Date.now() - requestStartTime}ms after request)`);
+                                    sendToRenderer('update-status', 'Thinking...');
+                                }
+                            }
+                            const content = delta?.content;
                             if (content) {
+                                if (!firstTokenLogged) {
+                                    firstTokenLogged = true;
+                                    console.log(`[GROQ] First answer token: ${Date.now() - requestStartTime}ms (hidden reasoning so far: ${reasoningChars} chars)`);
+                                }
                                 responseText += content;
                                 // Stream to renderer
                                 sendToRenderer('update-response', responseText);
+                            }
+                            // Groq attaches usage stats to the final chunk — queue_time here reveals
+                            // whether a slow request was Groq queuing vs actual generation/thinking
+                            const usage = parsed.x_groq?.usage || parsed.usage;
+                            if (usage && usage.total_time !== undefined) {
+                                console.log(`[GROQ] Usage: queue ${Number(usage.queue_time || 0).toFixed(2)}s | prompt ${usage.prompt_tokens} tok | completion ${usage.completion_tokens} tok in ${Number(usage.completion_time || 0).toFixed(2)}s`);
                             }
                         } catch (e) {
                             // Skip invalid JSON lines
@@ -478,8 +558,9 @@ async function chatWithLlama(userMessage, model = 'llama-4-maverick', imageData 
             });
 
             res.on('end', () => {
+                clearInterval(idleWatchdog);
                 if (res.statusCode === 200 && responseText) {
-                    console.log(`[GROQ LLAMA] Response: ${responseText.length} chars`);
+                    console.log(`[GROQ CHAT] Response: ${responseText.length} chars in ${((Date.now() - requestStartTime) / 1000).toFixed(1)}s${reasoningChars ? ` (+${reasoningChars} hidden reasoning chars)` : ''}`);
 
                     // Save to conversation history
                     conversationHistory.push({
@@ -494,7 +575,8 @@ async function chatWithLlama(userMessage, model = 'llama-4-maverick', imageData 
                         conversationHistory = conversationHistory.slice(-10);
                     }
 
-                    sendToRenderer('update-status', 'Listening...');
+                    // Interview mode: back to "Listening..." | Exam mode: "Ready" (waiting for next screenshot)
+                    sendToRenderer('update-status', currentGroqMode === 'exam' ? 'Ready' : 'Listening...');
                     resolve(responseText);
                 } else if (res.statusCode !== 200) {
                     console.error('[GROQ] Chat API Error:', res.statusCode, rawErrorBody);
@@ -506,7 +588,30 @@ async function chatWithLlama(userMessage, model = 'llama-4-maverick', imageData 
                         const rateLimit = parseRateLimitError(rawErrorBody);
                         scheduleRateLimitRecovery(rateLimit.statusMessage, rateLimit.recoveryMs);
                         reject(new Error(rateLimit.statusMessage));
+                    } else if (res.statusCode === 403) {
+                        const errLower = rawErrorBody.toLowerCase();
+                        if (errLower.includes('location') || errLower.includes('region') || errLower.includes('country')) {
+                            sendToRenderer('update-status', 'Region Not Supported (Groq)');
+                            reject(new Error('Region Not Supported (Groq)'));
+                        } else {
+                            sendToRenderer('update-status', 'Access Denied (Groq)');
+                            reject(new Error('Access Denied (Groq)'));
+                        }
                     } else if (res.statusCode === 413) {
+                        // Groq's TPM 413 includes exact numbers: "Limit 8000, Requested 12271"
+                        // Retry ONCE with max_tokens shrunk to fit the remaining TPM window
+                        const tpmMatch = rawErrorBody.match(/Limit (\d+), Requested (\d+)/i);
+                        if (tpmMatch && maxTokensOverride === null) {
+                            const tpmLimit = parseInt(tpmMatch[1], 10);
+                            const requested = parseInt(tpmMatch[2], 10);
+                            const inputTokens = requested - effectiveMaxTokens;
+                            const reducedMax = tpmLimit - inputTokens - 256; // 256 token safety buffer
+                            if (reducedMax >= 512) {
+                                console.log(`[GROQ] TPM limit ${tpmLimit}, input ~${inputTokens} tokens — retrying with max_tokens ${reducedMax}`);
+                                resolve(chatWithGroq(userMessage, model, imageData, reducedMax));
+                                return;
+                            }
+                        }
                         sendToRenderer('update-status', 'Request too large');
                         reject(new Error('Request too large'));
                     } else if (res.statusCode === 400) {
@@ -520,13 +625,35 @@ async function chatWithLlama(userMessage, model = 'llama-4-maverick', imageData 
                         reject(new Error('Connection error'));
                     }
                 } else {
+                    // HTTP 200 but empty answer: thinking consumed the entire max_tokens budget
+                    // (happens on free tier where the 413 retry shrinks the budget) — retry once without thinking
+                    if (reasoningChars > 0 && !forceNoThink && currentGroqMode === 'exam') {
+                        console.log(`[GROQ] Thinking ate the whole ${effectiveMaxTokens}-token budget with no answer — retrying without thinking`);
+                        resolve(chatWithGroq(userMessage, model, imageData, maxTokensOverride, true));
+                        return;
+                    }
+                    sendToRenderer('update-status', currentGroqMode === 'exam' ? 'Ready' : 'Listening...');
                     resolve(responseText);
                 }
             });
         });
 
+        // Idle watchdog: with 'parsed' reasoning even thinking keeps the stream active,
+        // so 120s of total silence means a hung request/queue — fail fast instead of hanging forever
+        const idleWatchdog = setInterval(() => {
+            if (Date.now() - lastActivityTime > 120 * 1000) {
+                clearInterval(idleWatchdog);
+                console.error('[GROQ] Stream idle for 120s — aborting request');
+                req.destroy(new Error('Request Timeout, Please Try Again'));
+            }
+        }, 10 * 1000);
+
         req.on('error', (e) => {
+            clearInterval(idleWatchdog);
             console.error('[GROQ] Chat request error:', e);
+            if (e.message === 'Request Timeout, Please Try Again') {
+                sendToRenderer('update-status', 'Request Timeout, Please Try Again');
+            }
             reject(e);
         });
 
@@ -635,7 +762,7 @@ async function checkAndFlush() {
 }
 
 /**
- * Process accumulated audio buffer: transcribe with Whisper, then send to Llama
+ * Process accumulated audio buffer: transcribe with Whisper, then send to chat model
  */
 async function processAudioBuffer(model = null) {
     if (isProcessing || speechBuffer.length === 0) {
@@ -643,7 +770,7 @@ async function processAudioBuffer(model = null) {
     }
 
     // Use provided model or stored model
-    const chatModel = model || selectedLlamaModel;
+    const chatModel = model || selectedGroqModel;
 
     // Calculate total duration
     const totalBytes = speechBuffer.reduce((sum, buf) => sum + buf.length, 0);
@@ -692,10 +819,11 @@ async function processAudioBuffer(model = null) {
 
         // Step 2: Send transcription to chat model for response
         let response;
-        if (chatModel === 'gemini-2.5-flash-lite') {
+        if (chatModel.startsWith('gemini-')) {
+            // Gemini Flash Lite models (2.5 / 3.1) route to Gemini for text generation
             response = await chatWithGeminiText(transcription);
         } else {
-            response = await chatWithLlama(transcription, chatModel);
+            response = await chatWithGroq(transcription, chatModel);
         }
 
         // Reset speech tracking state
@@ -706,7 +834,7 @@ async function processAudioBuffer(model = null) {
     } catch (error) {
         console.error('[GROQ] Error processing audio:', error);
         // Only update status if it's not already showing a user-friendly error
-        if (!['Invalid API Key (Groq)', 'Invalid API Key (Gemini)', 'API Quota Exceeded', 'Audio too long', 'Request too large', 'Server error', 'Connection error', 'Invalid request'].includes(error.message) && !error.message.startsWith('Rate Limit:')) {
+        if (!['Invalid API Key (Groq)', 'Invalid API Key (Gemini)', 'API Quota Exceeded', 'Audio too long', 'Request too large', 'Server error', 'Connection error', 'Invalid request', 'Request Timeout, Please Try Again'].includes(error.message) && !error.message.startsWith('Rate Limit:')) {
             sendToRenderer('update-status', 'Processing failed');
         }
         isSpeaking = false;
@@ -744,7 +872,7 @@ async function flushAudioBuffer(model = null) {
     }
 
     // Use provided model or stored model
-    const chatModel = model || selectedLlamaModel;
+    const chatModel = model || selectedGroqModel;
 
     isProcessing = true;
     sendToRenderer('update-status', 'Transcribing...');
@@ -770,10 +898,11 @@ async function flushAudioBuffer(model = null) {
 
         // Send transcription to chat model for response
         let response;
-        if (chatModel === 'gemini-2.5-flash-lite') {
+        if (chatModel.startsWith('gemini-')) {
+            // Gemini Flash Lite models (2.5 / 3.1) route to Gemini for text generation
             response = await chatWithGeminiText(transcription);
         } else {
-            response = await chatWithLlama(transcription, chatModel);
+            response = await chatWithGroq(transcription, chatModel);
         }
 
         // Reset state
@@ -784,7 +913,7 @@ async function flushAudioBuffer(model = null) {
     } catch (error) {
         console.error('[GROQ] Error flushing audio:', error);
         // Only update status if it's not already showing a user-friendly error
-        if (!['Invalid API Key (Groq)', 'Invalid API Key (Gemini)', 'API Quota Exceeded', 'Audio too long', 'Request too large', 'Server error', 'Connection error', 'Invalid request'].includes(error.message) && !error.message.startsWith('Rate Limit:')) {
+        if (!['Invalid API Key (Groq)', 'Invalid API Key (Gemini)', 'API Quota Exceeded', 'Audio too long', 'Request too large', 'Server error', 'Connection error', 'Invalid request', 'Request Timeout, Please Try Again'].includes(error.message) && !error.message.startsWith('Rate Limit:')) {
             sendToRenderer('update-status', 'Processing failed');
         }
         return null;
@@ -794,9 +923,9 @@ async function flushAudioBuffer(model = null) {
 }
 
 /**
- * Send screenshot + text to Llama for analysis
+ * Send screenshot + text to chat model for analysis
  */
-async function analyzeWithLlama(text, imageData, model = 'llama-4-maverick') {
+async function analyzeWithGroq(text, imageData, model = 'qwen-3.6-27b') {
     if (!groqApiKey) {
         console.error('[GROQ] No API key initialized');
         sendToRenderer('update-status', 'No API Key Found');
@@ -807,25 +936,29 @@ async function analyzeWithLlama(text, imageData, model = 'llama-4-maverick') {
     console.log('[GROQ] Analyzing screenshot with text:', text.substring(0, 100) + '...');
 
     try {
-        // Add language reminder for non-English languages
         let finalText = text;
+        // Exam mode: append per-message exam hints (code only / MCQ answer) — same as the Gemini path
+        if (currentGroqMode === 'exam') {
+            finalText += getExamMessageHint();
+        }
+        // Add language reminder for non-English languages
         if (storedLanguageName !== 'English') {
-            finalText = `${text} (Remember: Respond in ${storedLanguageName})`;
+            finalText = `${finalText} (Remember: Respond in ${storedLanguageName})`;
         }
 
         let response;
-        if (model === 'gemini-2.5-flash-lite') {
-            // Route to Gemini for screenshot analysis
+        if (model.startsWith('gemini-')) {
+            // Route to Gemini for screenshot analysis (Flash Lite 2.5 / 3.1)
             response = await chatWithGeminiText(finalText, imageData);
         } else {
-            response = await chatWithLlama(finalText, model, imageData);
+            response = await chatWithGroq(finalText, model, imageData);
         }
         // Status will be set to 'Listening...' / 'Ready' by the respective handler
         return response;
     } catch (error) {
         console.error('[GROQ] Error analyzing:', error);
         // Only update status if it's not already showing a user-friendly error
-        if (!['Invalid API Key (Groq)', 'Invalid API Key (Gemini)', 'API Quota Exceeded', 'Audio too long', 'Request too large', 'Server error', 'Connection error', 'Invalid request'].includes(error.message) && !error.message.startsWith('Rate Limit:')) {
+        if (!['Invalid API Key (Groq)', 'Invalid API Key (Gemini)', 'API Quota Exceeded', 'Audio too long', 'Request too large', 'Server error', 'Connection error', 'Invalid request', 'Request Timeout, Please Try Again'].includes(error.message) && !error.message.startsWith('Rate Limit:')) {
             sendToRenderer('update-status', 'Analysis failed');
         }
         return null;
@@ -896,7 +1029,7 @@ function updateGenerationSettings(settings) {
  * Setup IPC handlers for Groq
  */
 function setupGroqIpcHandlers() {
-    ipcMain.handle('initialize-groq', async (event, apiKey, customPrompt = '', profile = 'interview', language = 'en-US', model = 'llama-4-maverick') => {
+    ipcMain.handle('initialize-groq', async (event, apiKey, customPrompt = '', profile = 'interview', language = 'en-US', model = 'qwen-3.6-27b') => {
         try {
             initializeGroq(apiKey, customPrompt, profile, language, model);
             return { success: true };
@@ -917,9 +1050,9 @@ function setupGroqIpcHandlers() {
         }
     });
 
-    ipcMain.handle('groq-process-audio', async (event, model = 'llama-4-maverick') => {
+    ipcMain.handle('groq-process-audio', async (event, model = 'qwen-3.6-27b') => {
         try {
-            selectedLlamaModel = model;
+            selectedGroqModel = model;
             const result = await processAudioBuffer(model);
             return { success: true, result };
         } catch (error) {
@@ -928,9 +1061,9 @@ function setupGroqIpcHandlers() {
         }
     });
 
-    ipcMain.handle('groq-flush-audio', async (event, model = 'llama-4-maverick') => {
+    ipcMain.handle('groq-flush-audio', async (event, model = 'qwen-3.6-27b') => {
         try {
-            selectedLlamaModel = model;
+            selectedGroqModel = model;
             const result = await flushAudioBuffer(model);
             return { success: true, result };
         } catch (error) {
@@ -951,7 +1084,7 @@ function setupGroqIpcHandlers() {
             if (storedLanguageName !== 'English') {
                 finalMessage = `${message} (Remember: Respond in ${storedLanguageName})`;
             }
-            const response = await chatWithLlama(finalMessage, model, imageData);
+            const response = await chatWithGroq(finalMessage, model, imageData);
             return { success: true, response };
         } catch (error) {
             console.error('[GROQ] Chat error:', error);
@@ -961,7 +1094,7 @@ function setupGroqIpcHandlers() {
 
     ipcMain.handle('groq-analyze-image', async (event, { text, imageData, model }) => {
         try {
-            const response = await analyzeWithLlama(text, imageData, model);
+            const response = await analyzeWithGroq(text, imageData, model);
             return { success: true, response };
         } catch (error) {
             console.error('[GROQ] Analyze image error:', error);
@@ -995,8 +1128,8 @@ module.exports = {
     initializeGroq,
     pcmToWav,
     transcribeWithGroq,
-    chatWithLlama,
-    analyzeWithLlama,
+    chatWithGroq,
+    analyzeWithGroq,
     addAudioChunk,
     processAudioBuffer,
     flushAudioBuffer,
@@ -1008,5 +1141,6 @@ module.exports = {
     getConversationHistory,
     setupGroqIpcHandlers,
     sendToRenderer,
-    LLAMA_MODELS
+    clearGroqRateLimitCountdown,
+    GROQ_CHAT_MODELS
 };

@@ -1,7 +1,7 @@
 {
     "name": "cheating-daddy",
     "productName": "Cheating Daddy Pro",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Cheating Daddy Pro - AI assistant for interviews",
     "main": "src/index.js",
     "scripts": {
@@ -25,7 +25,7 @@
     },
     "license": "GPL-3.0",
     "dependencies": {
-        "@google/genai": "^1.2.0",
+        "@google/genai": "^1.43.0",
         "@ricky0123/vad-node": "^0.0.3",
         "electron-squirrel-startup": "^1.0.1"
     },

@@ -261,7 +261,7 @@ export class MainView extends LitElement {
         this.showGroqApiKeyError = false;
         this.onClearAndRestart = () => {};
         this.boundKeydownHandler = this.handleKeydown.bind(this);
-        this.selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
+        this.selectedModel = localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
         this.showApiKey = false;
         this.showGroqApiKey = false;
     }
@@ -274,16 +274,16 @@ export class MainView extends LitElement {
         this.showGroqApiKey = !this.showGroqApiKey;
     }
 
-    // Helper to check if selected model is a Groq/Llama model
+    // Helper to check if selected model is a Groq model (Qwen)
     isGroqModel() {
-        return this.selectedModel && (this.selectedModel.includes('llama') || this.selectedModel.includes('groq'));
+        return this.selectedModel && (this.selectedModel.includes('qwen') || this.selectedModel.includes('groq'));
     }
 
-    // Helper: gemini-2.5-flash-lite in interview mode needs BOTH Gemini + Groq keys
+    // Helper: Gemini Flash Lite models in interview mode need BOTH Gemini + Groq keys
     // In exam mode, only Gemini key is needed (no Whisper STT)
     needsBothKeys() {
         const profile = localStorage.getItem('selectedProfile') || 'exam';
-        return this.selectedModel === 'gemini-2.5-flash-lite' && profile !== 'exam';
+        return ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite'].includes(this.selectedModel) && profile !== 'exam';
     }
 
     connectedCallback() {
@@ -299,12 +299,12 @@ export class MainView extends LitElement {
         this.loadLayoutMode();
 
         // Load current model selection
-        this.selectedModel = localStorage.getItem('selectedModel') || 'llama-4-maverick';
+        this.selectedModel = localStorage.getItem('selectedModel') || 'qwen-3.6-27b';
 
         // Listen for storage changes (when model is changed in settings)
         this.storageHandler = (e) => {
             if (e.key === 'selectedModel') {
-                this.selectedModel = e.newValue || 'llama-4-maverick';
+                this.selectedModel = e.newValue || 'qwen-3.6-27b';
                 this.requestUpdate();
             }
         };
@@ -520,7 +520,7 @@ export class MainView extends LitElement {
                     <span @click=${() => this.openLink('https://aistudio.google.com/')} class="link">Gemini</span>
                     &middot;
                     <span @click=${() => this.openLink('https://groq.com/')} class="link">Groq</span>
-                    (Groq Whisper + Gemini 3 Flash)
+                    (Groq Whisper + ${this.selectedModel === 'gemini-3.1-flash-lite' ? 'Gemini 3.1 Flash Lite' : 'Gemini 2.5 Flash Lite'})
                 </p>
                 <p class="shortcut-hint">
                     Click <span class="help-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z"></path><path d="M9 9C9 5.49997 14.5 5.5 14.5 9C14.5 11.5 12 10.9999 12 13.9999"></path><path d="M12 18.01L12.01 17.9989"></path></svg></span> in the header for help, keyboard shortcuts, and more
@@ -533,9 +533,7 @@ export class MainView extends LitElement {
         const apiKeyValue = isGroq
             ? (localStorage.getItem('groqApiKey') || '')
             : (localStorage.getItem('apiKey') || '');
-        const modelName = isGroq
-            ? (this.selectedModel === 'llama-4-maverick' ? 'Llama 4 Maverick' : 'Llama 4 Scout')
-            : 'Gemini';
+        const modelName = isGroq ? 'Qwen 3.6 27B' : 'Gemini';
 
         return html`
             <div class="welcome">Welcome</div>
