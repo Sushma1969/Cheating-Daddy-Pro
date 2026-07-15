@@ -22,6 +22,10 @@ jobs:
 
         runs-on: ${{ matrix.os }}
 
+        env:
+            # onnxruntime-node CUDA extras are not needed — the CPU runtime ships in the npm package
+            ONNXRUNTIME_NODE_INSTALL: skip
+
         steps:
             - name: Checkout repo
               uses: actions/checkout@v4
