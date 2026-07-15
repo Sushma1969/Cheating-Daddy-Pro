@@ -13,6 +13,11 @@ jobs:
 
         runs-on: ${{ matrix.os }}
 
+        env:
+            # onnxruntime-node (via @ricky0123/vad-node) downloads CUDA GPU extras on install
+            # and its script breaks on Linux runners — VAD runs on the bundled CPU runtime, skip it
+            ONNXRUNTIME_NODE_INSTALL: skip
+
         steps:
             - uses: actions/checkout@v4
             - uses: actions/setup-node@v4
