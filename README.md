@@ -1,4 +1,4 @@
-# Cheating Daddy Pro v1.0.0
+# Cheating Daddy Pro v1.0.1
 
 <img width="1299" height="424" alt="cd (1)" src="https://github.com/user-attachments/assets/b25fff4d-043d-4f38-9985-f832ae0d0f6e" />
 
